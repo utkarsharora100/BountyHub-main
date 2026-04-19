@@ -1,0 +1,135 @@
+# ─── Docker Compose: Full Stack ───────────────────────────────
+# Spins up PostgreSQL (master + read replica), Redis, API server, and client
+
+services:
+  # ── PostgreSQL Master ──────────────────────────────────────
+  postgres-master:
+    image: bitnamilegacy/postgresql:16
+    container_name: bounty-postgres-master
+    environment:
+      POSTGRESQL_REPLICATION_MODE: master
+      POSTGRESQL_REPLICATION_USER: repl_user
+      POSTGRESQL_REPLICATION_PASSWORD: repl_password
+      POSTGRESQL_USERNAME: postgres
+      POSTGRESQL_PASSWORD: postgres123
+      POSTGRESQL_DATABASE: bounty_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata-master:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bounty_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── PostgreSQL Read Replica ──────────────────────────────────
+  postgres-replica:
+    image: bitnamilegacy/postgresql:16
+    container_name: bounty-postgres-replica
+    environment:
+      POSTGRESQL_REPLICATION_MODE: slave
+      POSTGRESQL_REPLICATION_USER: repl_user
+      POSTGRESQL_REPLICATION_PASSWORD: repl_password
+      POSTGRESQL_MASTER_HOST: postgres-master
+      POSTGRESQL_MASTER_PORT_NUMBER: 5432
+      # The missing variable required for Bitnami replica initialization
+      POSTGRESQL_PASSWORD: postgres123
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata-replica:/bitnami/postgresql
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    healthcheck: 
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bounty_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis Master ───────────────────────────────────────────
+  redis-master:
+    image: redis:7-alpine
+    container_name: bounty-redis
+    ports:
+      # Maps host 6369 to container internal 6379
+      - "6369:6379"
+    volumes:
+      - redis_master:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis Replica ──────────────────────────────────────────
+  redis-replica:
+    image: redis:7-alpine
+    container_name: bounty-redis-replica
+    ports:
+      # Maps host 6380 to container internal 6379
+      - "6380:6379"
+    volumes:
+      - redis_replica:/data
+    # Replicates from the master's internal container port
+    command: redis-server --replicaof redis-master 6379
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  
+  # ── Backend API Server ─────────────────────────────────────
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: bounty-server
+    ports:
+      - "5000:5000"
+    environment:
+      # Docker internal network uses standard container ports (5432 and 6379)
+      DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
+      DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
+      REDIS_URL: "redis://redis-master:6379"
+      REDIS_READ_URL: "redis://redis-replica:6379"
+      JWT_SECRET: "docker-jwt-secret-change-in-production"
+      JWT_EXPIRES_IN: "7d"
+      PORT: 5000
+      NODE_ENV: development
+      CLIENT_URL: "http://localhost:3000"
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+      postgres-replica:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    volumes:
+      - ./server/src:/app/src
+      - ./server/prisma:/app/prisma
+
+  # ── Frontend Client ────────────────────────────────────────
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: bounty-client
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://server:5000"
+    depends_on:
+      - server
+
+volumes:
+  pgdata-master:
+  pgdata-replica:
+  redis_master:
+  redis_replica:

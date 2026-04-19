@@ -1,0 +1,188 @@
+// Prisma Schema for Scalable Multi-University Bounty Collaboration Platform
+// Demonstrates: normalization, foreign keys, indexes, full-text search
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Universities ───────────────────────────────────────────────
+model University {
+  id      Int    @id @default(autoincrement())
+  name    String @unique @db.VarChar(200)
+  country String @db.VarChar(100)
+
+  users User[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([country])
+  @@map("universities")
+}
+
+// ─── Users ──────────────────────────────────────────────────────
+model User {
+  id           Int    @id @default(autoincrement())
+  name         String @db.VarChar(150)
+  email        String @unique @db.VarChar(255)
+  passwordHash String @map("password_hash") @db.VarChar(255)
+  avatarUrl    String? @map("avatar_url") @db.VarChar(500)
+  universityId Int    @map("university_id")
+  reputation   Int    @default(0)
+
+  university University @relation(fields: [universityId], references: [id])
+
+  bounties       Bounty[]
+  submissions    Submission[]
+  bids           Bid[]
+  comments       Comment[]
+  reputationLogs ReputationLog[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([universityId])
+  @@index([reputation(sort: Desc)])
+  @@index([email])
+  @@map("users")
+}
+
+// ─── Bounties ───────────────────────────────────────────────────
+enum BountyStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BountyCategory {
+  CODING
+  RESEARCH
+  DESIGN
+  DEBUGGING
+  DOCUMENTATION
+  OTHER
+}
+
+model Bounty {
+  id           Int            @id @default(autoincrement())
+  title        String         @db.VarChar(300)
+  description  String         @db.Text
+  rewardPoints Int            @map("reward_points")
+  category     BountyCategory @default(OTHER)
+  status       BountyStatus   @default(OPEN)
+  createdBy    Int            @map("created_by")
+  deadline     DateTime?
+
+  creator User @relation(fields: [createdBy], references: [id])
+
+  submissions Submission[]
+  bids        Bid[]
+  comments    Comment[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Indexes for performance
+  @@index([createdBy])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt(sort: Desc)])
+  @@index([rewardPoints(sort: Desc)])
+  @@index([deadline])
+  @@map("bounties")
+}
+
+// ─── Bids ───────────────────────────────────────────────────────
+enum BidStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model Bid {
+  id       Int       @id @default(autoincrement())
+  bountyId Int       @map("bounty_id")
+  bidderId Int       @map("bidder_id")
+  message  String    @db.Text
+  amount   Int?      // optional: proposed points
+  status   BidStatus @default(PENDING)
+
+  bounty Bounty @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  bidder User   @relation(fields: [bidderId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([bountyId, bidderId]) // one bid per user per bounty
+  @@index([bountyId])
+  @@index([bidderId])
+  @@map("bids")
+}
+
+// ─── Submissions ────────────────────────────────────────────────
+enum SubmissionStatus {
+  PENDING
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+}
+
+model Submission {
+  id             Int              @id @default(autoincrement())
+  bountyId       Int              @map("bounty_id")
+  submittedBy    Int              @map("submitted_by")
+  submissionLink String           @map("submission_link") @db.VarChar(500)
+  description    String?          @db.Text
+  status         SubmissionStatus @default(PENDING)
+
+  bounty    Bounty @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  submitter User   @relation(fields: [submittedBy], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([bountyId])
+  @@index([submittedBy])
+  @@index([status])
+  @@map("submissions")
+}
+
+// ─── Comments ───────────────────────────────────────────────────
+model Comment {
+  id       Int    @id @default(autoincrement())
+  bountyId Int    @map("bounty_id")
+  userId   Int    @map("user_id")
+  content  String @db.Text
+
+  bounty Bounty @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([bountyId])
+  @@index([userId])
+  @@index([createdAt(sort: Desc)])
+  @@map("comments")
+}
+
+// ─── Reputation Log ─────────────────────────────────────────────
+model ReputationLog {
+  id     Int    @id @default(autoincrement())
+  userId Int    @map("user_id")
+  points Int
+  reason String @db.VarChar(500)
+
+  user User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([createdAt(sort: Desc)])
+  @@map("reputation_log")
+}
