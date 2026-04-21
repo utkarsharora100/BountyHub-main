@@ -55,6 +55,7 @@ const bountyRepository = {
   // Full-text search using PostgreSQL
   async search(query, skip, take) {
     const where = {
+      status: { notIn: ['CANCELLED'] },
       OR: [
         { title: { contains: query, mode: 'insensitive' } },
         { description: { contains: query, mode: 'insensitive' } },

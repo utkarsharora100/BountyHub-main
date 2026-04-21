@@ -140,7 +140,7 @@ export default function SearchPage() {
       {/* Results count — hidden while loading to avoid stale count+query mismatch */}
       {!loading && results && (
         <div className="py-2.5 border-b border-gray-200 dark:border-gray-800 text-sm text-gray-500">
-          {results.pagination?.total || 0} result{results.pagination?.total !== 1 ? 's' : ''} for &quot;{query}&quot;
+          {results.pagination?.total || 0} result{results.pagination?.total !== 1 ? 's' : ''} for &quot;{query.trim()}&quot;
         </div>
       )}
 
@@ -166,7 +166,7 @@ export default function SearchPage() {
 
       {!loading && results?.data?.length === 0 && (
         <div className="text-center py-16 text-gray-400">
-          <p className="font-medium">No results found for &quot;{query}&quot;</p>
+          <p className="font-medium">No results found for &quot;{query.trim()}&quot;</p>
           <p className="text-sm mt-1">Try different keywords or check your spelling</p>
         </div>
       )}

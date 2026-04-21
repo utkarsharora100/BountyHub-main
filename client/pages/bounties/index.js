@@ -142,7 +142,7 @@ export default function BountiesPage() {
         )}
       </div>
 
-      {data?.pagination && (
+      {!loading && data?.pagination && (
         <div className="pt-4">
           <Pagination pagination={data.pagination} onPageChange={(p) => setFilters({ ...filters, page: p })} />
         </div>
