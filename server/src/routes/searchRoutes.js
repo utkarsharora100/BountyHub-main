@@ -5,5 +5,6 @@ const searchController = require('../controllers/searchController');
 const router = Router();
 
 router.get('/suggestions', searchController.suggestions);
+router.get('/unmet-demand', searchController.unmetDemand);
 
 module.exports = router;

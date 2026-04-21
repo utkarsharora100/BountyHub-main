@@ -176,8 +176,70 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: "http://server:5000"
     depends_on:
-      # The client won't start until the server is running
       - server
+
+  # ── Nginx Edge Proxy ───────────────────────────────────────
+  # Exposes the full stack on http://localhost:8080
+  # Routes /api/* → server:5000, everything else → client:3000
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: bounty-nginx
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+      - client
+    restart: unless-stopped
+
+  # ── DB Init ────────────────────────────────────────────────
+  # One-shot container: pushes Prisma schema and seeds data, then exits.
+  # Re-running docker compose up is safe — prisma db push is idempotent.
+  db-init:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: bounty-db-init
+    command: sh -c "npx prisma db push && node prisma/seed.js"
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
+      DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
+      REDIS_URL: "redis://redis-master:6379"
+      REDIS_READ_URL: "redis://redis-replica:6379"
+      MONGODB_URL: "mongodb://utkarsh:123456@mongo-primary:27017,mongo-replica:27017/bounty_platform?replicaSet=rs0&readPreference=secondaryPreferred&authSource=bounty_platform"
+      JWT_SECRET: "docker-jwt-secret-change-in-production"
+      NODE_ENV: development
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    restart: "no"
+
+  # ── Catalog Sync Worker ────────────────────────────────────
+  # Standalone Redis Stream consumer → MongoDB upsert pipeline.
+  # Runs syncWorker.js only (WORKER_ONLY=true suppresses in-server start).
+  catalog-sync-worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.worker
+    container_name: bounty-sync-worker
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
+      DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
+      REDIS_URL: "redis://redis-master:6379"
+      REDIS_READ_URL: "redis://redis-replica:6379"
+      MONGODB_URL: "mongodb://utkarsh:123456@mongo-primary:27017,mongo-replica:27017/bounty_platform?replicaSet=rs0&readPreference=secondaryPreferred&authSource=bounty_platform"
+      JWT_SECRET: "docker-jwt-secret-change-in-production"
+      NODE_ENV: production
+      WORKER_ONLY: "true"
+    depends_on:
+      postgres-replica:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      mongo-primary:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata-master:

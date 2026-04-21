@@ -21,7 +21,7 @@ const bountyRepository = {
       where: { id },
       include: {
         creator: {
-          select: { id: true, name: true, avatarUrl: true, reputation: true, university: { select: { name: true } } },
+          select: { id: true, name: true, avatarUrl: true, reputation: true, universityId: true, university: { select: { name: true } } },
         },
         _count: { select: { bids: true, submissions: true, comments: true } },
       },

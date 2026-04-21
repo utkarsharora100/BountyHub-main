@@ -11,6 +11,16 @@ const searchController = {
       next(err);
     }
   },
+
+  async unmetDemand(req, res, next) {
+    try {
+      const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+      const terms = await searchService.getUnmetDemand(limit);
+      res.json(terms);
+    } catch (err) {
+      next(err);
+    }
+  },
 };
 
 module.exports = searchController;

@@ -49,4 +49,12 @@ app.listen(config.port, () => {
   logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
 });
 
+// ── Background Workers ───────────────────────────────────────
+// Only run in-process when NOT running as the dedicated catalog-sync-worker container.
+// The docker-compose catalog-sync-worker service runs syncWorker.js standalone.
+if (process.env.NODE_ENV !== 'test' && !process.env.WORKER_ONLY) {
+  require('./workers/syncWorker');
+  require('./workers/lifecycleWorker');
+}
+
 module.exports = app;

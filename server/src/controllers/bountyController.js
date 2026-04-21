@@ -66,9 +66,13 @@ const bountyController = {
       const q = req.query.q;
       const result = await bountyService.search(q, page, limit);
 
-      // Track search term for autocomplete
       const searchService = require('../services/searchService');
       searchService.addSearchSuggestion(q).catch(() => {});
+
+      // Track zero-result searches as unmet demand signals
+      if (result.total === 0) {
+        searchService.trackUnmetDemand(q).catch(() => {});
+      }
 
       res.json(paginatedResponse(result.bounties, result.total, page, limit));
     } catch (err) {

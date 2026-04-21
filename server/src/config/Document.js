@@ -4,32 +4,40 @@ const { mongo } = require('./mongodb');
 // MongoDB isn't required for the core platform — guard so the server still starts
 // cleanly if MONGODB_URL is missing from the environment.
 if (!mongo) {
-  module.exports = { Document: null, DocumentRead: null };
+  module.exports = { Document: null, BountyCatalog: null };
   return;
 }
 
-const DocumentSchema = new mongoose.Schema({
-  title:         { type: String, required: true },
-  content:       { type: String, required: true },
-  university_id: { type: Number, required: true },
-  bounty_id:     { type: Number },
-  author_id:     { type: Number, required: true },
-  tags:          [{ type: String }],
-  metadata:      { type: mongoose.Schema.Types.Mixed },
-}, { timestamps: true });
+const BountyCatalogSchema = new mongoose.Schema(
+  {
+    bounty_id:     { type: Number, required: true, unique: true },
+    university_id: { type: Number, required: true },  // shard key — include in every query
+    title:         { type: String, required: true },
+    description:   { type: String },
+    category:      { type: String },
+    status:        { type: String },
+    reward_points: { type: Number },
+    deadline:      { type: Date },
+    creator: {
+      id:         { type: Number },
+      name:       { type: String },
+      reputation: { type: Number },
+      university: { type: String },
+    },
+    bid_count:        { type: Number, default: 0 },
+    submission_count: { type: Number, default: 0 },
+    skills:           [{ type: String }],
+  },
+  { timestamps: true, collection: 'bounty_catalog' }
+);
 
 // university_id is the shard key — all queries that include it get targeted routing
-// instead of a scatter-gather across every shard.
-DocumentSchema.set('shardKey', { university_id: 1 });
-DocumentSchema.index({ university_id: 1 });
+BountyCatalogSchema.index({ university_id: 1 });
 
-// Compound text index powers the full-text search in discoveryService.
-DocumentSchema.index({ title: 'text', content: 'text', tags: 'text' });
+// Compound text index powers full-text search in discoveryService
+BountyCatalogSchema.index({ title: 'text', description: 'text' });
 
-// Single model on the single connection.
-// discoveryService passes { readPreference: 'secondaryPreferred' } per query for reads,
-// and creates go to the primary automatically (replicas reject writes in a replica set).
-const Document = mongo.model('Document', DocumentSchema);
+const BountyCatalog = mongo.model('BountyCatalog', BountyCatalogSchema);
 
-// Export DocumentRead as an alias so discoveryService doesn't need to change its imports.
-module.exports = { Document, DocumentRead: Document };
+// Document alias kept for backward compatibility with discoveryService import
+module.exports = { Document: BountyCatalog, BountyCatalog };

@@ -1,6 +1,6 @@
 // ─── Search Service (with Redis autocomplete caching) ────────
 const bountyRepository = require('../repositories/bountyRepository');
-const { redis, cacheGet } = require('../config/redis');
+const { redis, redisRead, cacheGet } = require('../config/redis');
 
 const searchService = {
   // Store search suggestions in Redis sorted set
@@ -37,6 +37,30 @@ const searchService = {
       const { bounties } = await bountyRepository.search(prefix, 0, 8);
       return bounties.map((b) => b.title.toLowerCase());
     }, 120);
+  },
+  // Track search queries that returned zero results — useful for demand analytics
+  async trackUnmetDemand(query) {
+    if (!redis || !query || query.trim().length < 2) return;
+    try {
+      await redis.zincrby('unmet:demand', 1, query.toLowerCase().trim());
+    } catch {
+      // ignore
+    }
+  },
+
+  // Return the top N unmet demand terms (zero-result searches)
+  async getUnmetDemand(limit = 20) {
+    if (!redisRead) return [];
+    try {
+      const raw = await redisRead.zrevrange('unmet:demand', 0, limit - 1, 'WITHSCORES');
+      const result = [];
+      for (let i = 0; i < raw.length; i += 2) {
+        result.push({ term: raw[i], count: parseInt(raw[i + 1], 10) });
+      }
+      return result;
+    } catch {
+      return [];
+    }
   },
 };
 

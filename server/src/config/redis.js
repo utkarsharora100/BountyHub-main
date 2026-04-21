@@ -65,4 +65,14 @@ async function cacheInvalidate(pattern) {
   }
 }
 
-module.exports = { redis, cacheGet, cacheInvalidate };
+// Helper: publish event to Redis Stream event bus
+async function publishEvent(type, payload) {
+  if (!redis) return;
+  try {
+    await redis.xadd('events:bounty', '*', 'type', type, 'data', JSON.stringify(payload));
+  } catch {
+    // ignore publish errors — do not fail the calling transaction
+  }
+}
+
+module.exports = { redis, redisRead, cacheGet, cacheInvalidate, publishEvent };

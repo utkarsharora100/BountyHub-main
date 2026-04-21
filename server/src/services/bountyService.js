@@ -1,6 +1,6 @@
 // ─── Bounty Service ──────────────────────────────────────────
 const bountyRepository = require('../repositories/bountyRepository');
-const { cacheGet, cacheInvalidate } = require('../config/redis');
+const { cacheGet, cacheInvalidate, publishEvent } = require('../config/redis');
 const AppError = require('../utils/AppError');
 
 const bountyService = {
@@ -15,6 +15,7 @@ const bountyService = {
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
+    await publishEvent('BOUNTY_CREATED', { bountyId: bounty.id, createdBy: userId });
     return bounty;
   },
 
@@ -33,6 +34,7 @@ const bountyService = {
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
+    await publishEvent('BOUNTY_UPDATED', { bountyId, universityId: bounty.creator?.universityId });
     return updated;
   },
 
@@ -41,9 +43,12 @@ const bountyService = {
     if (!bounty) throw new AppError('Bounty not found', 404);
     if (bounty.createdBy !== userId) throw new AppError('Not authorized', 403);
 
+    // Capture universityId before deletion — needed by sync worker to remove from catalog
+    const universityId = bounty.creator?.universityId;
     await bountyRepository.delete(bountyId);
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
+    await publishEvent('BOUNTY_DELETED', { bountyId, universityId });
   },
 
   async getById(bountyId) {
