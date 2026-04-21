@@ -133,7 +133,7 @@ services:
       dockerfile: Dockerfile
     container_name: bounty-server
     ports:
-      - "5000:5000"
+      - "5001:5000"
     environment:
       DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
       DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"

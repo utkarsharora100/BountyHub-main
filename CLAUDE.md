@@ -59,12 +59,18 @@ BountyHub-main/
 │       │   ├── searchService.js      # Redis ZRANGEBYLEX autocomplete
 │       │   ├── commentService.js
 │       │   └── userService.js
+│       ├── workers/
+│       │   ├── syncWorker.js        # Redis stream consumer → PG replica read → MongoDB upsert
+│       │   └── lifecycleWorker.js   # Runs every 60s, cancels expired OPEN bounties
 │       ├── repositories/      # Prisma queries (use prismaRead for SELECTs, prisma for writes)
 │       ├── routes/            # Express routers
 │       ├── middleware/        # auth.js (JWT), validate.js, errorHandler.js
 │       └── utils/             # AppError, logger (winston), pagination
 │
-└── docker-compose.yml         # Full stack: PG primary+replica, Redis master+replica, Mongo primary+replica, server, client
+├── nginx/
+│   ├── nginx.conf             # Routes /api/* → server:5000, / → client:3000
+│   └── Dockerfile             # FROM nginx:alpine
+└── docker-compose.yml         # Full stack: PG+replica, Redis+replica, Mongo+replica, server, client, nginx, db-init, catalog-sync-worker
 ```
 
 ---
@@ -151,8 +157,9 @@ cd server && npm install && npm run dev
 ```
 
 **Ports:**
-- Client: `http://localhost:3000`
-- Server API: `http://localhost:5000`
+- **UI entry point: `http://localhost:8080`** (Nginx — use this for everything)
+- Client direct: `http://localhost:3000`
+- Server API direct: `http://localhost:5001` (host) → 5000 inside Docker; port 5000 blocked by macOS AirPlay
 - PostgreSQL Primary: `localhost:5432`
 - PostgreSQL Replica: `localhost:5433`
 - Redis Master: `localhost:6369`
