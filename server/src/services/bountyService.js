@@ -75,18 +75,19 @@ const bountyService = {
     }
 
     const cacheKey = `bounties:list:${JSON.stringify({ skip, take, where, sortBy })}`;
-    return cacheGet(cacheKey, () => bountyRepository.findMany({ skip, take, where, orderBy }), 30);
+    // 600s TTL — cacheInvalidate('bounties:*') fires on every write, so stale data can't persist
+    return cacheGet(cacheKey, () => bountyRepository.findMany({ skip, take, where, orderBy }), 600);
   },
 
   async search(query, page = 1, limit = 10) {
     if (!query || query.trim().length < 2) throw new AppError('Search query too short', 400);
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const cacheKey = `bounties:search:${query}:${page}:${limit}`;
-    return cacheGet(cacheKey, () => bountyRepository.search(query, skip, parseInt(limit)), 60);
+    return cacheGet(cacheKey, () => bountyRepository.search(query, skip, parseInt(limit)), 600);
   },
 
   async getTrending() {
-    return cacheGet('trending:bounties', () => bountyRepository.getTrending(10), 60);
+    return cacheGet('trending:bounties', () => bountyRepository.getTrending(10), 600);
   },
 };
 

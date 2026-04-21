@@ -36,7 +36,7 @@ const searchService = {
       // Fallback: query database for matching bounty titles
       const { bounties } = await bountyRepository.search(prefix, 0, 8);
       return bounties.map((b) => b.title.toLowerCase());
-    }, 120);
+    }, 600);
   },
   // Track search queries that returned zero results — useful for demand analytics
   async trackUnmetDemand(query) {

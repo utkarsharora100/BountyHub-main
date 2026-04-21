@@ -47,6 +47,11 @@ app.use(errorHandler);
 // ── Start Server ────────────────────────────────────────────
 app.listen(config.port, () => {
   logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
+  // Warm Redis cache in the background — don't block startup
+  if (process.env.NODE_ENV !== 'test') {
+    const { warmAll } = require('./utils/cacheWarmer');
+    warmAll().catch(() => {});
+  }
 });
 
 // ── Background Workers ───────────────────────────────────────

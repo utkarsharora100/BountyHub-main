@@ -88,7 +88,9 @@ BountyHub-main/
 - **Master** on port `6369` — writes: `SETEX` cache, `XADD` stream events, `ZINCRBY` hot score
 - **Replica** on port `6380` — reads: `GET` cache (via `cacheGet`), `ZRANGEBYLEX` autocomplete
 - Streams & Consumer Groups: Sync Worker subscribes with a consumer group of 50 workers
-- TTL cache: bounty list (30s), search results (60s), sessions/trending (configurable)
+- TTL cache: bounty list (600s), search results (600s), trending (600s), autocomplete (600s)
+- Cache invalidation fires on every write (`cacheInvalidate('bounties:*')`), so 600s is safe
+- On startup: `cacheWarmer.js` pre-populates bounty list, trending, and 1000+ search suggestion terms
 
 ### MongoDB (Read Replica / Catalog)
 - **Primary** on port `27017`, **Replica** on port `27018` — replica set `rs0`
