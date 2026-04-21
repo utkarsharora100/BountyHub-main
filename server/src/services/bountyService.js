@@ -1,5 +1,6 @@
 // ─── Bounty Service ──────────────────────────────────────────
 const bountyRepository = require('../repositories/bountyRepository');
+const discoveryService = require('./discoveryService');
 const { cacheGet, cacheInvalidate, publishEvent } = require('../config/redis');
 const AppError = require('../utils/AppError');
 
@@ -83,7 +84,12 @@ const bountyService = {
     if (!query || query.trim().length < 2) throw new AppError('Search query too short', 400);
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const cacheKey = `bounties:search:${query}:${page}:${limit}`;
-    return cacheGet(cacheKey, () => bountyRepository.search(query, skip, parseInt(limit)), 600);
+    return cacheGet(cacheKey, async () => {
+      const mongoResult = await discoveryService.search(query, skip, parseInt(limit));
+      if (mongoResult) return mongoResult;
+      // Fallback: PostgreSQL read replica when MongoDB is unavailable
+      return bountyRepository.search(query, skip, parseInt(limit));
+    }, 600);
   },
 
   async getTrending() {
