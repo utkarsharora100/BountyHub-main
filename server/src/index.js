@@ -9,6 +9,8 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const routes = require('./routes');
 const errorHandler = require('./middleware/errorHandler');
+const searchService = require('./services/searchService');
+const { startLifecycleWorker } = require('./services/lifecycleService');
 
 const app = express();
 
@@ -47,6 +49,11 @@ app.use(errorHandler);
 // ── Start Server ────────────────────────────────────────────
 app.listen(config.port, () => {
   logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
+  searchService
+    .rebuildBountyIndex()
+    .then(({ indexed }) => logger.info(`Search index ready (${indexed} bounties indexed)`))
+    .catch((err) => logger.error(err));
+  startLifecycleWorker();
 });
 
 module.exports = app;

@@ -76,6 +76,8 @@ model Bounty {
   description  String         @db.Text
   rewardPoints Int            @map("reward_points")
   category     BountyCategory @default(OTHER)
+  department   String?        @db.VarChar(150)
+  skills       String[]       @default([])
   status       BountyStatus   @default(OPEN)
   createdBy    Int            @map("created_by")
   deadline     DateTime?
@@ -93,6 +95,7 @@ model Bounty {
   @@index([createdBy])
   @@index([status])
   @@index([category])
+  @@index([department])
   @@index([createdAt(sort: Desc)])
   @@index([rewardPoints(sort: Desc)])
   @@index([deadline])

@@ -2,19 +2,47 @@
 const bountyRepository = require('../repositories/bountyRepository');
 const { cacheGet, cacheInvalidate } = require('../config/redis');
 const AppError = require('../utils/AppError');
+const searchService = require('./searchService');
+
+function assertFutureDeadline(deadline) {
+  if (!deadline) return null;
+  const parsed = new Date(deadline);
+  if (Number.isNaN(parsed.getTime())) throw new AppError('Invalid deadline', 400);
+  if (parsed <= new Date()) throw new AppError('Deadline must be in the future', 400);
+  return parsed;
+}
+
+function normalizeSkills(skills) {
+  if (!skills) return [];
+  const values = Array.isArray(skills) ? skills : String(skills).split(',');
+  return [...new Set(values.map((skill) => String(skill).trim()).filter(Boolean))].slice(0, 20);
+}
+
+async function refreshSearchIndex(bountyId) {
+  const bounty = await bountyRepository.findByIdForIndex(bountyId);
+  if (bounty) {
+    await searchService.indexBounty(bounty);
+  } else {
+    await searchService.removeBountyFromIndex(bountyId);
+  }
+}
 
 const bountyService = {
   async create(userId, data) {
+    const deadline = assertFutureDeadline(data.deadline);
     const bounty = await bountyRepository.create({
       title: data.title,
       description: data.description,
       rewardPoints: parseInt(data.rewardPoints),
       category: data.category || 'OTHER',
-      deadline: data.deadline ? new Date(data.deadline) : null,
+      department: data.department || null,
+      skills: normalizeSkills(data.skills),
+      deadline,
       createdBy: userId,
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
+    await refreshSearchIndex(bounty.id);
     return bounty;
   },
 
@@ -23,16 +51,20 @@ const bountyService = {
     if (!bounty) throw new AppError('Bounty not found', 404);
     if (bounty.createdBy !== userId) throw new AppError('Not authorized', 403);
 
+    const deadline = data.deadline ? assertFutureDeadline(data.deadline) : null;
     const updated = await bountyRepository.update(bountyId, {
       ...(data.title && { title: data.title }),
       ...(data.description && { description: data.description }),
       ...(data.rewardPoints && { rewardPoints: parseInt(data.rewardPoints) }),
       ...(data.category && { category: data.category }),
+      ...(Object.prototype.hasOwnProperty.call(data, 'department') && { department: data.department || null }),
+      ...(Object.prototype.hasOwnProperty.call(data, 'skills') && { skills: normalizeSkills(data.skills) }),
       ...(data.status && { status: data.status }),
-      ...(data.deadline && { deadline: new Date(data.deadline) }),
+      ...(data.deadline && { deadline }),
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
+    await refreshSearchIndex(bountyId);
     return updated;
   },
 
@@ -44,6 +76,7 @@ const bountyService = {
     await bountyRepository.delete(bountyId);
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
+    await searchService.removeBountyFromIndex(bountyId);
   },
 
   async getById(bountyId) {
@@ -77,7 +110,15 @@ const bountyService = {
     if (!query || query.trim().length < 2) throw new AppError('Search query too short', 400);
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const cacheKey = `bounties:search:${query}:${page}:${limit}`;
-    return cacheGet(cacheKey, () => bountyRepository.search(query, skip, parseInt(limit)), 60);
+    const result = await cacheGet(cacheKey, async () => (
+      await searchService.searchBounties(query, page, limit)
+      || bountyRepository.search(query, skip, parseInt(limit))
+    ), 60);
+
+    if (result.total === 0) {
+      searchService.logUnmetDemand(query).catch(() => {});
+    }
+    return result;
   },
 
   async getTrending() {

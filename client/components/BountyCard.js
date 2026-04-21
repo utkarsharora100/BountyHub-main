@@ -49,6 +49,16 @@ export default function BountyCard({ bounty }) {
           <span className={statusBadge[bounty.status] || 'badge'}>
             {bounty.status.replace('_', ' ')}
           </span>
+          {bounty.department && (
+            <span className="badge bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+              {bounty.department}
+            </span>
+          )}
+          {bounty.skills?.slice(0, 2).map((skill) => (
+            <span key={skill} className="badge bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+              {skill}
+            </span>
+          ))}
         </div>
 
         {/* Footer */}

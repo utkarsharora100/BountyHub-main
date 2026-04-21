@@ -157,6 +157,7 @@ export default function BountyDetail() {
             <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
               <span className={statusColors[bounty.status]}>{bounty.status.replace('_', ' ')}</span>
               <span className="badge bg-primary-50 text-primary-700 dark:bg-primary-950 dark:text-primary-300">{bounty.category}</span>
+              {bounty.department && <span className="badge bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{bounty.department}</span>}
               <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{formatDistanceToNow(new Date(bounty.createdAt), { addSuffix: true })}</span>
               {bounty.deadline && (
                 <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />Due {format(new Date(bounty.deadline), 'MMM d, yyyy')}</span>
@@ -186,6 +187,14 @@ export default function BountyDetail() {
         <div className="prose prose-sm dark:prose-invert max-w-none pt-4 border-t border-gray-100 dark:border-gray-800">
           <p className="whitespace-pre-wrap">{bounty.description}</p>
         </div>
+
+        {bounty.skills?.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {bounty.skills.map((skill) => (
+              <span key={skill} className="badge bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{skill}</span>
+            ))}
+          </div>
+        )}
 
         {/* Actions */}
         {user && !isOwner && bounty.status === 'OPEN' && (
