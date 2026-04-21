@@ -9,7 +9,7 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const routes = require('./routes');
 const errorHandler = require('./middleware/errorHandler');
-const searchService = require('./services/searchService');
+const { rebuildReadModels, startCatalogSyncWorker } = require('./services/catalogSyncService');
 const { startLifecycleWorker } = require('./services/lifecycleService');
 
 const app = express();
@@ -49,10 +49,16 @@ app.use(errorHandler);
 // ── Start Server ────────────────────────────────────────────
 app.listen(config.port, () => {
   logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
-  searchService
-    .rebuildBountyIndex()
-    .then(({ indexed }) => logger.info(`Search index ready (${indexed} bounties indexed)`))
-    .catch((err) => logger.error(err));
+  if (config.readModels.rebuildOnApiStart) {
+    rebuildReadModels()
+      .then(({ searchIndexed, catalogEnabled, catalogIndexed }) => {
+        logger.info(`Read models ready (redis=${searchIndexed}, mongo=${catalogEnabled ? catalogIndexed : 'disabled'})`);
+      })
+      .catch((err) => logger.error(err));
+  }
+  if (config.readModels.embeddedSyncWorker) {
+    startCatalogSyncWorker();
+  }
   startLifecycleWorker();
 });
 

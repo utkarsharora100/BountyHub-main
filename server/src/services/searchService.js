@@ -1,4 +1,5 @@
 const bountyRepository = require('../repositories/bountyRepository');
+const catalogRepository = require('../repositories/catalogRepository');
 const { redis, cacheGet } = require('../config/redis');
 
 const INDEX_KEYS = {
@@ -148,9 +149,9 @@ const searchService = {
     await pipeline.exec();
   },
 
-  async rebuildBountyIndex() {
+  async rebuildBountyIndex(existingBounties) {
     if (!redis) return { indexed: 0 };
-    const bounties = await bountyRepository.findIndexableForSearch();
+    const bounties = existingBounties || await bountyRepository.findIndexableForSearch();
     const keys = [
       ...(await collectKeys('search:prefix:*')),
       ...(await collectKeys('search:bounty:*')),
@@ -202,8 +203,15 @@ const searchService = {
     if (total === 0) return { bounties: [], total: 0 };
 
     const pageIds = ids.map((id) => parseInt(id, 10));
-    const bounties = await bountyRepository.findSearchResultsByIds(pageIds);
-    const byId = new Map(bounties.map((bounty) => [bounty.id, bounty]));
+    const catalogBounties = await catalogRepository.findByIds(pageIds);
+    const byId = new Map((catalogBounties || []).map((bounty) => [bounty.id, bounty]));
+    const missingIds = pageIds.filter((id) => !byId.has(id));
+    if (!catalogBounties || missingIds.length) {
+      const fallbackBounties = await bountyRepository.findSearchResultsByIds(
+        catalogBounties ? missingIds : pageIds
+      );
+      fallbackBounties.forEach((bounty) => byId.set(bounty.id, bounty));
+    }
 
     return {
       bounties: pageIds.map((id) => byId.get(id)).filter(Boolean),

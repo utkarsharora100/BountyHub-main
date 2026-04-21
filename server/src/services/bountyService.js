@@ -3,6 +3,7 @@ const bountyRepository = require('../repositories/bountyRepository');
 const { cacheGet, cacheInvalidate } = require('../config/redis');
 const AppError = require('../utils/AppError');
 const searchService = require('./searchService');
+const { publishBountyEvent } = require('./eventBus');
 
 const VALID_STATUSES = new Set(['OPEN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']);
 const VALID_CATEGORIES = new Set(['CODING', 'RESEARCH', 'DESIGN', 'DEBUGGING', 'DOCUMENTATION', 'OTHER']);
@@ -22,13 +23,8 @@ function normalizeSkills(skills) {
   return [...new Set(values.map((skill) => String(skill).trim()).filter(Boolean))].slice(0, 20);
 }
 
-async function refreshSearchIndex(bountyId) {
-  const bounty = await bountyRepository.findByIdForIndex(bountyId);
-  if (bounty) {
-    await searchService.indexBounty(bounty);
-  } else {
-    await searchService.removeBountyFromIndex(bountyId);
-  }
+async function publishReadModelRefresh(bountyId) {
+  await publishBountyEvent('bounty.upserted', bountyId);
 }
 
 const bountyService = {
@@ -49,7 +45,7 @@ const bountyService = {
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await refreshSearchIndex(bounty.id);
+    await publishReadModelRefresh(bounty.id);
     return bounty;
   },
 
@@ -80,7 +76,7 @@ const bountyService = {
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await refreshSearchIndex(bountyId);
+    await publishReadModelRefresh(bountyId);
     return updated;
   },
 
@@ -92,7 +88,7 @@ const bountyService = {
     await bountyRepository.delete(bountyId);
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await searchService.removeBountyFromIndex(bountyId);
+    await publishBountyEvent('bounty.deleted', bountyId);
   },
 
   async getById(bountyId) {

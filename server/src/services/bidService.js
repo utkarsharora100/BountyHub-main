@@ -2,7 +2,7 @@ const { Prisma } = require('@prisma/client');
 const bidRepository = require('../repositories/bidRepository');
 const { prisma } = require('../config/database');
 const { cacheInvalidate } = require('../config/redis');
-const searchService = require('./searchService');
+const { publishBountyEvent } = require('./eventBus');
 const AppError = require('../utils/AppError');
 
 function validateBountyForBid(bounty, userId) {
@@ -28,7 +28,7 @@ function normalizeBidAmount(amount, bountyReward) {
 
 const bidService = {
   async placeBid(userId, bountyId, message, amount) {
-    return prisma.$transaction(async (tx) => {
+    const bid = await prisma.$transaction(async (tx) => {
       const bounty = await tx.bounty.findUnique({ where: { id: bountyId } });
       validateBountyForBid(bounty, userId);
 
@@ -41,6 +41,10 @@ const bidService = {
         },
       });
     });
+    await cacheInvalidate('bounties:*');
+    await cacheInvalidate('trending:*');
+    await publishBountyEvent('bounty.upserted', bountyId, { reason: 'bid.created' });
+    return bid;
   },
 
   async acceptBid(userId, bidId) {
@@ -93,7 +97,7 @@ const bidService = {
 
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await searchService.removeBountyFromIndex(accepted.bountyId);
+    await publishBountyEvent('bounty.closed', accepted.bountyId, { reason: 'bid.accepted' });
     return accepted;
   },
 
@@ -102,7 +106,10 @@ const bidService = {
     if (!bid) throw new AppError('Bid not found', 404);
     if (bid.bounty.createdBy !== userId) throw new AppError('Not authorized', 403);
 
-    return bidRepository.updateStatus(bidId, 'REJECTED');
+    const updated = await bidRepository.updateStatus(bidId, 'REJECTED');
+    await cacheInvalidate('bounties:*');
+    await publishBountyEvent('bounty.upserted', bid.bountyId, { reason: 'bid.rejected' });
+    return updated;
   },
 
   async getBidsForBounty(bountyId, page, limit) {

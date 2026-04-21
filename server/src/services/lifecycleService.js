@@ -1,6 +1,6 @@
 const bountyRepository = require('../repositories/bountyRepository');
 const { cacheInvalidate } = require('../config/redis');
-const searchService = require('./searchService');
+const { publishBountyEvent } = require('./eventBus');
 const logger = require('../utils/logger');
 
 const ONE_MINUTE = 60 * 1000;
@@ -12,7 +12,7 @@ async function expireDueBounties() {
   await Promise.all([
     cacheInvalidate('bounties:*'),
     cacheInvalidate('trending:*'),
-    ...result.ids.map((id) => searchService.removeBountyFromIndex(id)),
+    ...result.ids.map((id) => publishBountyEvent('bounty.closed', id, { reason: 'deadline.expired' })),
   ]);
 
   logger.info(`Expired ${result.count} overdue bounties`);

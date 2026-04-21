@@ -2,7 +2,7 @@ const { Prisma } = require('@prisma/client');
 const submissionRepository = require('../repositories/submissionRepository');
 const { prisma } = require('../config/database');
 const { cacheInvalidate } = require('../config/redis');
-const searchService = require('./searchService');
+const { publishBountyEvent } = require('./eventBus');
 const AppError = require('../utils/AppError');
 
 function assertBountyAcceptsSubmission(bounty) {
@@ -17,7 +17,7 @@ function assertBountyAcceptsSubmission(bounty) {
 
 const submissionService = {
   async submitWork(userId, bountyId, data) {
-    return prisma.$transaction(async (tx) => {
+    const submission = await prisma.$transaction(async (tx) => {
       const bounty = await tx.bounty.findUnique({
         where: { id: bountyId },
         include: { bids: { where: { status: 'ACCEPTED' }, select: { bidderId: true } } },
@@ -40,6 +40,10 @@ const submissionService = {
         },
       });
     });
+    await cacheInvalidate('bounties:*');
+    await cacheInvalidate('trending:*');
+    await publishBountyEvent('bounty.upserted', bountyId, { reason: 'submission.created' });
+    return submission;
   },
 
   async reviewSubmission(userId, submissionId, status) {
@@ -106,7 +110,10 @@ const submissionService = {
       await cacheInvalidate('leaderboard:*');
       await cacheInvalidate('bounties:*');
       await cacheInvalidate('trending:*');
-      await searchService.removeBountyFromIndex(updated.bountyId);
+      await publishBountyEvent('bounty.closed', updated.bountyId, { reason: 'submission.accepted' });
+    } else {
+      await cacheInvalidate('bounties:*');
+      await publishBountyEvent('bounty.upserted', updated.bountyId, { reason: 'submission.reviewed' });
     }
 
     return updated;

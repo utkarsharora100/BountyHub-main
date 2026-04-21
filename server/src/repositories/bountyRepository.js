@@ -55,8 +55,15 @@ const bountyRepository = {
       where: { id },
       include: {
         creator: {
-          select: { university: { select: { name: true } } },
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            reputation: true,
+            university: { select: { name: true, country: true } },
+          },
         },
+        _count: { select: { bids: true, submissions: true, comments: true } },
       },
     });
   },
@@ -69,8 +76,15 @@ const bountyRepository = {
       },
       include: {
         creator: {
-          select: { university: { select: { name: true } } },
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            reputation: true,
+            university: { select: { name: true, country: true } },
+          },
         },
+        _count: { select: { bids: true, submissions: true, comments: true } },
       },
     });
   },

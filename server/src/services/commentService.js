@@ -1,6 +1,8 @@
 // ─── Comment Service ─────────────────────────────────────────
 const commentRepository = require('../repositories/commentRepository');
 const bountyRepository = require('../repositories/bountyRepository');
+const { cacheInvalidate } = require('../config/redis');
+const { publishBountyEvent } = require('./eventBus');
 const AppError = require('../utils/AppError');
 
 const commentService = {
@@ -8,7 +10,10 @@ const commentService = {
     const bounty = await bountyRepository.findById(bountyId);
     if (!bounty) throw new AppError('Bounty not found', 404);
 
-    return commentRepository.create({ bountyId, userId, content });
+    const comment = await commentRepository.create({ bountyId, userId, content });
+    await cacheInvalidate('bounties:*');
+    await publishBountyEvent('bounty.upserted', bountyId, { reason: 'comment.created' });
+    return comment;
   },
 
   async getComments(bountyId, page, limit) {

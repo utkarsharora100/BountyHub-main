@@ -1,6 +1,22 @@
 # ─── Docker Compose: Full Stack ───────────────────────────────
 # Spins up PostgreSQL (master + read replica), Redis, API server, and client
 
+x-server-env: &server-env
+  DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
+  DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
+  REDIS_URL: "redis://redis-master:6379"
+  REDIS_READ_URL: "redis://redis-replica:6379"
+  MONGODB_URL: "mongodb://mongo-catalog:27017"
+  MONGODB_DB: "bounty_catalog"
+  MONGODB_CATALOG_COLLECTION: "bounty_catalog"
+  BOUNTY_EVENT_STREAM: "events:bounty"
+  CATALOG_SYNC_GROUP: "catalog-sync"
+  JWT_SECRET: "docker-jwt-secret-change-in-production"
+  JWT_EXPIRES_IN: "7d"
+  PORT: 5000
+  NODE_ENV: development
+  CLIENT_URL: "http://localhost:3000"
+
 services:
   # ── PostgreSQL Master ──────────────────────────────────────
   postgres-master:
@@ -84,38 +100,79 @@ services:
       retries: 5
   
   # ── Backend API Server ─────────────────────────────────────
-  server:
+  # MongoDB Catalog Read Model
+  mongo-catalog:
+    image: mongo:7
+    container_name: bounty-mongo-catalog
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_catalog:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  db-init:
     build:
       context: ./server
       dockerfile: Dockerfile
-    container_name: bounty-server
-    ports:
-      - "5000:5000"
+    command: sh -c "npx prisma db push --skip-generate && node scripts/wait-for-read-model.js && node prisma/seed.js && node scripts/wait-for-read-model.js --seeded"
     environment:
-      # Docker internal network uses standard container ports (5432 and 6379)
-      DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
-      DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
-      REDIS_URL: "redis://redis-master:6379"
-      REDIS_READ_URL: "redis://redis-replica:6379"
-      JWT_SECRET: "docker-jwt-secret-change-in-production"
-      JWT_EXPIRES_IN: "7d"
-      PORT: 5000
-      NODE_ENV: development
-      CLIENT_URL: "http://localhost:3000"
+      <<: *server-env
     depends_on:
       postgres-master:
         condition: service_healthy
       postgres-replica:
         condition: service_healthy
+    volumes:
+      - ./server/prisma:/app/prisma
+    restart: "no"
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    expose:
+      - "5000"
+    environment:
+      <<: *server-env
+      ENABLE_EMBEDDED_SYNC_WORKER: "false"
+      READ_MODEL_REBUILD_ON_START: "false"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
       redis-master:
         condition: service_healthy
       redis-replica:
+        condition: service_healthy
+      mongo-catalog:
         condition: service_healthy
     volumes:
       - ./server/src:/app/src
       - ./server/prisma:/app/prisma
 
   # ── Frontend Client ────────────────────────────────────────
+  catalog-sync-worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    command: sh -c "node scripts/wait-for-read-model.js --seeded && node src/workers/catalogSyncWorker.js"
+    environment:
+      <<: *server-env
+      CATALOG_SYNC_CONSUMER: "catalog-sync-worker"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      redis-master:
+        condition: service_healthy
+      mongo-catalog:
+        condition: service_healthy
+    volumes:
+      - ./server/src:/app/src
+      - ./server/prisma:/app/prisma
+
   client:
     build:
       context: ./client
@@ -128,8 +185,21 @@ services:
     depends_on:
       - server
 
+  # Local Edge / Reverse Proxy
+  edge:
+    image: nginx:1.27-alpine
+    container_name: bounty-edge
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - client
+      - server
+
 volumes:
   pgdata-master:
   pgdata-replica:
   redis_master:
   redis_replica:
+  mongo_catalog:
