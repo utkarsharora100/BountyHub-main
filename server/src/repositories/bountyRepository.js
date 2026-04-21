@@ -51,6 +51,7 @@ const bountyRepository = {
   async search(query, skip, take) {
     const terms = query.trim().split(/\s+/).join(' & ');
     const where = {
+      status: { notIn: ['CANCELLED'] },
       OR: [
         { title: { contains: query, mode: 'insensitive' } },
         { description: { contains: query, mode: 'insensitive' } },
