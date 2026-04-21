@@ -13,6 +13,18 @@ export default function SearchPage() {
   const [page, setPage] = useState(1);
   const inputRef = useRef();
   const debounceRef = useRef();
+  const containerRef = useRef();
+
+  // Fix 3: Close suggestions when clicking outside the search container
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Debounce autocomplete so we're not hitting the API on every keystroke
   useEffect(() => {
@@ -35,6 +47,8 @@ export default function SearchPage() {
 
   async function doSearch(searchQuery, searchPage = 1) {
     if (!searchQuery || searchQuery.length < 2) return;
+    // Fix 1: Clear stale results immediately so old count/pagination don't show with new query
+    setResults(null);
     setLoading(true);
     setShowSuggestions(false);
     try {
@@ -78,7 +92,8 @@ export default function SearchPage() {
       </div>
 
       {/* Search input with autocomplete dropdown */}
-      <div className="py-4 border-b border-gray-200 dark:border-gray-800">
+      {/* Fix 3: containerRef attached here so click-outside detection works */}
+      <div ref={containerRef} className="py-4 border-b border-gray-200 dark:border-gray-800">
         <form onSubmit={handleSubmit} className="relative">
           <div className="relative">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -87,13 +102,15 @@ export default function SearchPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              // Fix 5: close suggestions on blur (150ms delay lets suggestion onClick fire first)
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
               className="input pl-10 pr-10 py-2.5"
               placeholder="Search bounties... (e.g., machine learning, API, React)"
             />
             {query && (
               <button
                 type="button"
-                onClick={() => { setQuery(''); setResults(null); setSuggestions([]); }}
+                onClick={() => { setQuery(''); setResults(null); setSuggestions([]); setShowSuggestions(false); }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
                 <X className="w-4 h-4" />
@@ -101,12 +118,23 @@ export default function SearchPage() {
             )}
           </div>
 
+          {/* Fix 4: Visible submit button so users know how to trigger search */}
+          <button
+            type="submit"
+            disabled={loading || query.length < 2}
+            className="mt-2 w-full btn btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <SearchIcon className="w-4 h-4" />
+            {loading ? 'Searching…' : 'Search'}
+          </button>
+
           {showSuggestions && suggestions.length > 0 && (
             <div className="absolute z-10 w-full mt-1 card py-1 shadow-lg">
               {suggestions.map((s, i) => (
                 <button
                   key={i}
                   type="button"
+                  onMouseDown={(e) => e.preventDefault()} // prevent blur firing before click
                   onClick={() => handleSuggestionClick(s)}
                   className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
                 >
@@ -119,7 +147,7 @@ export default function SearchPage() {
         </form>
       </div>
 
-      {/* Results count */}
+      {/* Results count — hidden while loading to avoid stale count+query mismatch */}
       {!loading && results && (
         <div className="py-2.5 border-b border-gray-200 dark:border-gray-800 text-sm text-gray-500">
           {results.pagination?.total || 0} result{results.pagination?.total !== 1 ? 's' : ''} for &quot;{query}&quot;
@@ -128,9 +156,8 @@ export default function SearchPage() {
 
       {/* Forum-style thread list for results */}
       {(loading || (results?.data?.length > 0)) && (
-        <div className={`border border-t-0 border-gray-200 dark:border-gray-800 rounded-b-xl overflow-hidden ${loading ? '' : ''}`}>
+        <div className={`border border-t-0 border-gray-200 dark:border-gray-800 rounded-b-xl overflow-hidden`}>
           {loading ? (
-            // Simple inline skeleton rows
             [...Array(6)].map((_, i) => (
               <div key={i} className="flex gap-4 p-4 border-b border-gray-200 dark:border-gray-800 animate-pulse">
                 <div className="skeleton w-14 h-14 rounded-lg shrink-0" />
@@ -154,7 +181,8 @@ export default function SearchPage() {
         </div>
       )}
 
-      {results?.pagination && (
+      {/* Fix 2: Hide pagination while loading — old controls caused wrong page navigation */}
+      {!loading && results?.pagination && (
         <div className="pt-4">
           <Pagination pagination={results.pagination} onPageChange={handlePageChange} />
         </div>
