@@ -8,7 +8,7 @@ import Pagination from '../../components/Pagination';
 import { Filter, SortDesc } from 'lucide-react';
 
 const CATEGORIES = ['ALL', 'CODING', 'RESEARCH', 'DESIGN', 'DEBUGGING', 'DOCUMENTATION', 'OTHER'];
-const STATUSES = ['ALL', 'OPEN', 'IN_PROGRESS', 'COMPLETED'];
+const STATUSES = ['ALL', 'OPEN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
 const SORT_OPTIONS = [
   { value: 'newest', label: 'Newest' },
   { value: 'oldest', label: 'Oldest' },

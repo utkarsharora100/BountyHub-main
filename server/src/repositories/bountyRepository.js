@@ -111,15 +111,21 @@ const bountyRepository = {
     return { bounties, total };
   },
 
-  // Full-text search using PostgreSQL
+  // Search fallback using PostgreSQL when Redis is unavailable.
   async search(query, skip, take) {
     const skillTerms = query.trim().split(/\s+/).filter(Boolean);
     const where = {
-      OR: [
-        { title: { contains: query, mode: 'insensitive' } },
-        { description: { contains: query, mode: 'insensitive' } },
-        { department: { contains: query, mode: 'insensitive' } },
-        { skills: { hasSome: skillTerms } },
+      status: 'OPEN',
+      AND: [
+        { OR: [{ deadline: null }, { deadline: { gt: new Date() } }] },
+        {
+          OR: [
+            { title: { contains: query, mode: 'insensitive' } },
+            { description: { contains: query, mode: 'insensitive' } },
+            { department: { contains: query, mode: 'insensitive' } },
+            { skills: { hasSome: skillTerms } },
+          ],
+        },
       ],
     };
 

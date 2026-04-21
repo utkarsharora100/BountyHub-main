@@ -13,8 +13,11 @@ const userService = {
 
   async updateProfile(userId, data) {
     const allowed = {};
-    if (data.name) allowed.name = data.name;
-    if (data.avatarUrl) allowed.avatarUrl = data.avatarUrl;
+    if (data.name && data.name.trim()) allowed.name = data.name.trim();
+    if (Object.prototype.hasOwnProperty.call(data, 'avatarUrl')) {
+      allowed.avatarUrl = data.avatarUrl ? data.avatarUrl.trim() : null;
+    }
+    if (Object.keys(allowed).length === 0) throw new AppError('No profile fields provided', 400);
 
     const user = await userRepository.update(userId, allowed);
     await cacheInvalidate('leaderboard:*');

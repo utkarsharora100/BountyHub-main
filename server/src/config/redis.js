@@ -15,7 +15,7 @@ try {
   });
 
   redis.on('connect', () => logger.info('Redis connected'));
-  redis.on('error', (err) => logger.error('Redis error:', err.message));
+  redis.on('error', (err) => logger.error(`Redis error: ${err?.message || err?.code || String(err)}`));
 } catch (err) {
   logger.warn('Redis unavailable, caching disabled');
   redis = null;
@@ -47,8 +47,12 @@ async function cacheGet(key, fetcher, ttlSeconds = 300) {
 async function cacheInvalidate(pattern) {
   if (!redis) return;
   try {
-    const keys = await redis.keys(pattern);
-    if (keys.length) await redis.del(...keys);
+    let cursor = '0';
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
+      cursor = nextCursor;
+      if (keys.length) await redis.del(...keys);
+    } while (cursor !== '0');
   } catch {
     // ignore
   }

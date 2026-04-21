@@ -92,6 +92,24 @@ const LAST_NAMES = [
 
 const CATEGORIES = ['CODING', 'RESEARCH', 'DESIGN', 'DEBUGGING', 'DOCUMENTATION', 'OTHER'];
 const STATUSES = ['OPEN', 'OPEN', 'OPEN', 'OPEN', 'IN_PROGRESS', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
+const DEPARTMENTS = [
+  'Computer Science',
+  'Data Science',
+  'Electronics',
+  'Mechanical Engineering',
+  'Design',
+  'Research Cell',
+  'Training and Placement',
+  'Student Affairs',
+];
+const SKILLS_BY_CATEGORY = {
+  CODING: ['JavaScript', 'React', 'Node.js', 'Python', 'PostgreSQL', 'GraphQL', 'Flutter', 'WebSockets'],
+  RESEARCH: ['Literature Review', 'Data Analysis', 'Python', 'Statistics', 'Academic Writing', 'Benchmarking'],
+  DESIGN: ['Figma', 'UI Design', 'UX Research', 'Prototyping', 'Design Systems', 'Responsive Design'],
+  DEBUGGING: ['Profiling', 'SQL Optimization', 'Docker', 'CI/CD', 'Authentication', 'Performance Testing'],
+  DOCUMENTATION: ['OpenAPI', 'Technical Writing', 'Markdown', 'Architecture Diagrams', 'Tutorial Writing'],
+  OTHER: ['Project Planning', 'Code Review', 'Mentoring', 'Data Analysis', 'Communication'],
+};
 
 // ── Bounty title + description templates ────────────────────
 const BOUNTY_TEMPLATES = {
@@ -327,6 +345,8 @@ async function main() {
       description: template.d,
       rewardPoints: randInt(20, 300),
       category: cat,
+      department: pick(DEPARTMENTS),
+      skills: pickN(SKILLS_BY_CATEGORY[cat], randInt(2, 4)),
       status,
       createdBy: creator.id,
       deadline: hasDeadline
@@ -358,6 +378,7 @@ async function main() {
       bountyId: bounty.id,
       bidderId: bidder.id,
       message: pick(BID_MESSAGES),
+      amount: rand() > 0.35 ? randInt(10, Math.max(10, bounty.rewardPoints)) : null,
       status: pick(['PENDING', 'PENDING', 'PENDING', 'ACCEPTED', 'REJECTED']),
     });
   }

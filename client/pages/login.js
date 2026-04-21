@@ -56,7 +56,7 @@ export default function Login() {
         </p>
 
         <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs text-gray-500">
-          <strong>Demo:</strong> alice@mit.edu / password123
+          <strong>Demo:</strong> aarav@iitd.ac.in / pass123
         </div>
       </div>
     </div>

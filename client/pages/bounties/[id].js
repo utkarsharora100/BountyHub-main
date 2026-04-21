@@ -33,6 +33,7 @@ export default function BountyDetail() {
   const [bidModal, setBidModal] = useState(false);
   const [submitModal, setSubmitModal] = useState(false);
   const [bidMessage, setBidMessage] = useState('');
+  const [bidAmount, setBidAmount] = useState('');
   const [subLink, setSubLink] = useState('');
   const [subDesc, setSubDesc] = useState('');
   const [commentText, setCommentText] = useState('');
@@ -67,10 +68,11 @@ export default function BountyDetail() {
   async function handlePlaceBid(e) {
     e.preventDefault();
     try {
-      await api.post(`/bounties/${id}/bids`, { message: bidMessage });
+      await api.post(`/bounties/${id}/bids`, { message: bidMessage, amount: bidAmount || undefined });
       toast.success('Bid placed!');
       setBidModal(false);
       setBidMessage('');
+      setBidAmount('');
       loadAll();
     } catch (err) {
       toast.error(err.message);
@@ -237,6 +239,9 @@ export default function BountyDetail() {
                     <span className="text-xs text-gray-400 ml-auto">{formatDistanceToNow(new Date(bid.createdAt), { addSuffix: true })}</span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{bid.message}</p>
+                  {bid.amount && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium">Proposed: {bid.amount} pts</p>
+                  )}
                   <div className="flex items-center gap-2 mt-2">
                     <span className={`badge text-xs ${bid.status === 'ACCEPTED' ? 'badge-completed' : bid.status === 'REJECTED' ? 'badge-cancelled' : 'badge-open'}`}>
                       {bid.status}
@@ -333,6 +338,10 @@ export default function BountyDetail() {
           <div>
             <label className="block text-sm font-medium mb-1">Your Message</label>
             <textarea value={bidMessage} onChange={(e) => setBidMessage(e.target.value)} className="input min-h-[100px]" placeholder="Explain why you're a good fit..." required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Proposed Points (optional)</label>
+            <input type="number" min="1" max={bounty.rewardPoints} value={bidAmount} onChange={(e) => setBidAmount(e.target.value)} className="input" placeholder={`${bounty.rewardPoints} max`} />
           </div>
           <button type="submit" className="btn-primary w-full">Submit Bid</button>
         </form>

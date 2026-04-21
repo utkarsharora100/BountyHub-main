@@ -14,6 +14,18 @@ function validateBountyForBid(bounty, userId) {
   if (bounty.createdBy === userId) throw new AppError('Cannot bid on your own bounty', 400);
 }
 
+function normalizeBidAmount(amount, bountyReward) {
+  if (amount === undefined || amount === null || amount === '') return null;
+  const parsed = parseInt(amount, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new AppError('Bid amount must be a positive integer', 400);
+  }
+  if (parsed > bountyReward) {
+    throw new AppError('Bid amount cannot exceed the bounty reward', 400);
+  }
+  return parsed;
+}
+
 const bidService = {
   async placeBid(userId, bountyId, message, amount) {
     return prisma.$transaction(async (tx) => {
@@ -25,7 +37,7 @@ const bidService = {
           bountyId,
           bidderId: userId,
           message,
-          amount: amount ? parseInt(amount, 10) : null,
+          amount: normalizeBidAmount(amount, bounty.rewardPoints),
         },
       });
     });

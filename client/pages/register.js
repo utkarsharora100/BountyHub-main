@@ -5,23 +5,20 @@ import Link from 'next/link';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import { UserPlus } from 'lucide-react';
-
-const UNIVERSITIES = [
-  { id: 1, name: 'MIT' },
-  { id: 2, name: 'Stanford University' },
-  { id: 3, name: 'University of Oxford' },
-  { id: 4, name: 'ETH Zurich' },
-  { id: 5, name: 'University of Tokyo' },
-  { id: 6, name: 'IIT Delhi' },
-  { id: 7, name: 'University of Toronto' },
-  { id: 8, name: 'NUS Singapore' },
-];
+import api from '../lib/api';
 
 export default function Register() {
   const [form, setForm] = useState({ name: '', email: '', password: '', universityId: '' });
   const [loading, setLoading] = useState(false);
+  const [universities, setUniversities] = useState([]);
   const { register } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    api.get('/universities')
+      .then(setUniversities)
+      .catch(() => setUniversities([]));
+  }, []);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -65,8 +62,8 @@ export default function Register() {
             <label className="block text-sm font-medium mb-1">University</label>
             <select name="universityId" value={form.universityId} onChange={handleChange} className="input" required>
               <option value="">Select university...</option>
-              {UNIVERSITIES.map((u) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
+              {universities.map((u) => (
+                <option key={u.id} value={u.id}>{u.name}{u.country ? `, ${u.country}` : ''}</option>
               ))}
             </select>
           </div>
