@@ -1,15 +1,13 @@
 // ─── Bounty Controller ───────────────────────────────────────
 const bountyService = require('../services/bountyService');
 const { paginate, paginatedResponse } = require('../utils/pagination');
-const { prismaRead } = require('../config/database');
 // Pull enum values straight from the Prisma client — they're always in sync with schema.prisma.
 const { BountyStatus, Category, BountyCategory } = require('@prisma/client');
 
 const bountyController = {
   async create(req, res, next) {
     try {
-      const user = await prismaRead.user.findUnique({ where: { id: req.user.id } });
-      if (!user || user.role !== 'STAFF') {
+      if (req.user.role !== 'STAFF') {
         return res.status(403).json({ error: 'Only university staff can create tasks' });
       }
 

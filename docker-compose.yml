@@ -61,24 +61,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Redis Replica ──────────────────────────────────────────
-  redis-replica:
-    image: redis:7-alpine
-    container_name: bounty-redis-replica
-    ports:
-      - "6380:6379"
-    volumes:
-      - redis_replica:/data
-    command: redis-server --replicaof redis-master 6379
-    depends_on:
-      redis-master:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   # ── MongoDB Primary ────────────────────────────────────────
   mongo-primary:
     image: bitnami/mongodb
@@ -138,7 +120,6 @@ services:
       DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
       DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
       REDIS_URL: "redis://redis-master:6379"
-      REDIS_READ_URL: "redis://redis-replica:6379"
       # Single replica set URI — driver handles primary writes & secondary reads automatically.
       # readPreference=secondaryPreferred routes reads to the replica when available.
       # authSource must match the database where the app user (utkarsh) was created.
@@ -154,8 +135,6 @@ services:
       postgres-replica:
         condition: service_healthy
       redis-master:
-        condition: service_healthy
-      redis-replica:
         condition: service_healthy
       mongo-primary:
         condition: service_healthy
@@ -201,12 +180,11 @@ services:
       context: ./server
       dockerfile: Dockerfile
     container_name: bounty-db-init
-    command: sh -c "npx prisma db push && node prisma/seed.js"
+    command: sh -c "npx prisma db push --accept-data-loss --skip-generate && node prisma/seed.js"
     environment:
       DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
       DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
       REDIS_URL: "redis://redis-master:6379"
-      REDIS_READ_URL: "redis://redis-replica:6379"
       MONGODB_URL: "mongodb://utkarsh:123456@mongo-primary:27017,mongo-replica:27017/bounty_platform?replicaSet=rs0&readPreference=secondaryPreferred&authSource=bounty_platform"
       JWT_SECRET: "docker-jwt-secret-change-in-production"
       NODE_ENV: development
@@ -227,7 +205,6 @@ services:
       DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
       DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
       REDIS_URL: "redis://redis-master:6379"
-      REDIS_READ_URL: "redis://redis-replica:6379"
       MONGODB_URL: "mongodb://utkarsh:123456@mongo-primary:27017,mongo-replica:27017/bounty_platform?replicaSet=rs0&readPreference=secondaryPreferred&authSource=bounty_platform"
       JWT_SECRET: "docker-jwt-secret-change-in-production"
       NODE_ENV: production
@@ -245,6 +222,5 @@ volumes:
   pgdata-master:
   pgdata-replica:
   redis_master:
-  redis_replica:
   mongodb_primary_data:
   mongodb_replica_data:

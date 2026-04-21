@@ -1,10 +1,26 @@
 // ─── Catalog Sync Worker ──────────────────────────────────────
 // Consumes Redis Stream events:bounty and keeps MongoDB bounty_catalog in sync
 // with PostgreSQL (source of truth). Reads from PG replica to shield primary.
-const { redis } = require('../config/redis');
+const Redis = require('ioredis');
+const { redis: sharedRedis } = require('../config/redis');
+const config = require('../config');
 const { prismaRead } = require('../config/database');
 const { BountyCatalog } = require('../config/Document');
 const logger = require('../utils/logger');
+
+// Dedicated blocking connection for XREADGROUP so the BLOCK 5000 call never
+// stalls the shared redis client used by the cache layer and HTTP handlers.
+const streamRedis = new Redis(config.redis.url, {
+  maxRetriesPerRequest: 3,
+  retryStrategy(times) {
+    if (times > 3) return null;
+    return Math.min(times * 200, 2000);
+  },
+});
+streamRedis.on('error', (err) => logger.error('[sync] stream redis error:', err.message));
+
+// Use sharedRedis only for XGROUP CREATE and XACK (non-blocking commands).
+const redis = sharedRedis;
 
 const STREAM_KEY = 'events:bounty';
 const GROUP_NAME = 'sync-workers';
@@ -87,13 +103,19 @@ async function fullRebuild() {
     },
   });
 
-  for (const bounty of bounties) {
-    const doc = buildCatalogDoc(bounty);
-    await BountyCatalog.findOneAndUpdate(
-      { bounty_id: bounty.id, university_id: doc.university_id },
-      { $set: doc },
-      { upsert: true, new: true }
-    );
+  // Use bulkWrite for a single round-trip instead of N sequential upserts
+  if (bounties.length > 0) {
+    const ops = bounties.map((bounty) => {
+      const doc = buildCatalogDoc(bounty);
+      return {
+        updateOne: {
+          filter: { bounty_id: bounty.id, university_id: doc.university_id },
+          update: { $set: doc },
+          upsert: true,
+        },
+      };
+    });
+    await BountyCatalog.bulkWrite(ops, { ordered: false });
   }
   logger.info(`[sync] rebuild complete — ${bounties.length} bounties synced`);
 }
@@ -119,7 +141,7 @@ async function startConsumerLoop() {
 
   while (true) {
     try {
-      const results = await redis.xreadgroup(
+      const results = await streamRedis.xreadgroup(
         'GROUP', GROUP_NAME, WORKER_ID,
         'COUNT', '10',
         'BLOCK', '5000',

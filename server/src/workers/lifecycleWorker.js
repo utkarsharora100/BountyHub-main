@@ -22,25 +22,30 @@ async function expireOverdueBounties() {
 
     logger.info(`[lifecycle] expiring ${expired.length} overdue bounties`);
 
-    for (const bounty of expired) {
-      await prisma.$transaction(async (tx) => {
-        await tx.bounty.update({ where: { id: bounty.id }, data: { status: 'CANCELLED' } });
-        await tx.bid.updateMany({
-          where: { bountyId: bounty.id, status: 'PENDING' },
-          data: { status: 'REJECTED' },
-        });
-      });
+    const ids = expired.map((b) => b.id);
+    await prisma.$transaction([
+      prisma.bounty.updateMany({
+        where: { id: { in: ids }, status: 'OPEN' },
+        data: { status: 'CANCELLED' },
+      }),
+      prisma.bid.updateMany({
+        where: { bountyId: { in: ids }, status: 'PENDING' },
+        data: { status: 'REJECTED' },
+      }),
+    ]);
 
-      await publishEvent('BOUNTY_UPDATED', {
-        bountyId: bounty.id,
-        universityId: bounty.creator?.universityId,
-      });
-
-      logger.info(`[lifecycle] cancelled bounty ${bounty.id}`);
-    }
+    await Promise.allSettled(
+      expired.map((bounty) =>
+        publishEvent('BOUNTY_UPDATED', {
+          bountyId: bounty.id,
+          universityId: bounty.creator?.universityId,
+        })
+      )
+    );
 
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
+    logger.info(`[lifecycle] cancelled ${expired.length} overdue bounties`);
   } catch (err) {
     logger.error('[lifecycle] expiry run failed:', err.message);
   }

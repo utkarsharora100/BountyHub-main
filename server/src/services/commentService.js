@@ -5,8 +5,8 @@ const AppError = require('../utils/AppError');
 
 const commentService = {
   async addComment(userId, bountyId, content) {
-    const bounty = await bountyRepository.findById(bountyId);
-    if (!bounty) throw new AppError('Bounty not found', 404);
+    const exists = await bountyRepository.existsById(bountyId);
+    if (!exists) throw new AppError('Bounty not found', 404);
 
     return commentRepository.create({ bountyId, userId, content });
   },

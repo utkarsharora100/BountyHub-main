@@ -52,7 +52,8 @@ const bountyService = {
   },
 
   async getById(bountyId) {
-    const bounty = await bountyRepository.findById(bountyId);
+    // 300s TTL — cacheInvalidate('bounties:*') fires on update/delete/bid-accept/submission-accept
+    const bounty = await cacheGet(`bounties:detail:${bountyId}`, () => bountyRepository.findById(bountyId), 300);
     if (!bounty) throw new AppError('Bounty not found', 404);
     return bounty;
   },
@@ -74,7 +75,10 @@ const bountyService = {
       default: orderBy = { createdAt: 'desc' };
     }
 
-    const cacheKey = `bounties:list:${JSON.stringify({ skip, take, where, sortBy })}`;
+    // 'newest' is the UI label for the default sort — normalise to undefined so the
+    // key matches what JSON.stringify produces when sortBy is absent.
+    const normalizedSortBy = ['reward', 'oldest', 'deadline'].includes(sortBy) ? sortBy : undefined;
+    const cacheKey = `bounties:list:${JSON.stringify({ skip, take, where, sortBy: normalizedSortBy })}`;
     // 600s TTL — cacheInvalidate('bounties:*') fires on every write, so stale data can't persist
     return cacheGet(cacheKey, () => bountyRepository.findMany({ skip, take, where, orderBy }), 600);
   },

@@ -4,7 +4,6 @@ const config = require('./index');
 const logger = require('../utils/logger');
 
 let redis;
-let redisRead;
 
 try {
   redis = new Redis(config.redis.url, {
@@ -17,19 +16,9 @@ try {
 
   redis.on('connect', () => logger.info('Redis connected'));
   redis.on('error', (err) => logger.error('Redis error:', err.message));
-
-  redisRead = new Redis(config.redis.readUrl, {
-    maxRetriesPerRequest: 3,
-    retryStrategy(times) {
-      if (times > 3) return null; // stop retrying
-      return Math.min(times * 200, 2000);
-    },
-  });
-  redisRead.on('connect', () => logger.info('Redis Read Replica connected'));
 } catch (err) {
   logger.warn('Redis unavailable, caching disabled');
   redis = null;
-  redisRead = null;
 }
 
 // Helper: get cached value or execute fetcher
@@ -37,7 +26,7 @@ async function cacheGet(key, fetcher, ttlSeconds = 300) {
   if (!redis) return fetcher();
 
   try {
-    const cached = await redisRead.get(key); // Route read to replica
+    const cached = await redis.get(key);
     if (cached) return JSON.parse(cached);
   } catch {
     // cache miss or error — fall through
@@ -75,4 +64,4 @@ async function publishEvent(type, payload) {
   }
 }
 
-module.exports = { redis, redisRead, cacheGet, cacheInvalidate, publishEvent };
+module.exports = { redis, cacheGet, cacheInvalidate, publishEvent };

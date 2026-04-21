@@ -116,34 +116,24 @@ export default function SearchPage() {
                 <X className="w-4 h-4" />
               </button>
             )}
+
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute z-10 w-full top-full mt-1 card py-1 shadow-lg">
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()} // prevent blur firing before click
+                    onClick={() => handleSuggestionClick(s)}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                  >
+                    <SearchIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-
-          {/* Fix 4: Visible submit button so users know how to trigger search */}
-          <button
-            type="submit"
-            disabled={loading || query.length < 2}
-            className="mt-2 w-full btn btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <SearchIcon className="w-4 h-4" />
-            {loading ? 'Searching…' : 'Search'}
-          </button>
-
-          {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 card py-1 shadow-lg">
-              {suggestions.map((s, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()} // prevent blur firing before click
-                  onClick={() => handleSuggestionClick(s)}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
-                >
-                  <SearchIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
         </form>
       </div>
 

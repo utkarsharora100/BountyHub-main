@@ -16,6 +16,11 @@ const bountyRepository = {
   },
 
   // ── READ (replica) ─────────────────────────────────────────
+  async existsById(id) {
+    const row = await prismaRead.bounty.findUnique({ where: { id }, select: { id: true } });
+    return row !== null;
+  },
+
   async findById(id) {
     return prismaRead.bounty.findUnique({
       where: { id },
@@ -49,7 +54,6 @@ const bountyRepository = {
 
   // Full-text search using PostgreSQL
   async search(query, skip, take) {
-    const terms = query.trim().split(/\s+/).join(' & ');
     const where = {
       OR: [
         { title: { contains: query, mode: 'insensitive' } },
@@ -67,12 +71,25 @@ const bountyRepository = {
           creator: {
             select: { id: true, name: true, avatarUrl: true, university: { select: { name: true } } },
           },
-          _count: { select: { bids: true, submissions: true } },
         },
       }),
       prismaRead.bounty.count({ where }),
     ]);
     return { bounties, total };
+  },
+
+  // Lightweight title-only lookup for autocomplete fallback.
+  async searchTitles(prefix, take = 8) {
+    const rows = await prismaRead.bounty.findMany({
+      where: {
+        title: { contains: prefix, mode: 'insensitive' },
+      },
+      select: { title: true },
+      take,
+      distinct: ['title'],
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((r) => r.title.toLowerCase());
   },
 
   // Trending bounties (highest reward, open, recent)

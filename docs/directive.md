@@ -9,7 +9,7 @@ Rules that every contributor and AI agent must follow. These are non-negotiable 
 **Rule:** Transaction Service writes. Discovery Service reads. Never cross.
 
 - `bountyService`, `bidService`, `submissionService`, `authService` → write to PostgreSQL via `prisma` (master)
-- `discoveryService`, `searchService` → read from MongoDB + Redis replica only
+- `discoveryService`, `searchService` → read from MongoDB + Redis
 - Transaction Service must NEVER query MongoDB
 - Discovery Service must NEVER call `prisma` (write client) or emit Redis events
 
@@ -23,8 +23,7 @@ Rules that every contributor and AI agent must follow. These are non-negotiable 
 |---|---|---|
 | Any INSERT / UPDATE / DELETE | `prisma` | `config/database.js` |
 | Any SELECT in a repository | `prismaRead` | `config/database.js` |
-| Cache write / stream publish | `redis` | `config/redis.js` |
-| Cache read / autocomplete | `redisRead` (inside `cacheGet`) | `config/redis.js` |
+| Cache read/write + stream publish | `redis` | `config/redis.js` |
 | MongoDB writes (Sync Worker only) | Mongoose default (routes to primary) | `config/mongodb.js` |
 | MongoDB reads (Discovery only) | `.read('secondaryPreferred')` per query | `discoveryService.js` |
 

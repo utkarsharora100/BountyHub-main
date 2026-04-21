@@ -12,6 +12,9 @@ const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 
+// App runs behind Nginx in Docker; trust first proxy for client IP handling.
+app.set('trust proxy', 1);
+
 // ── Security Middleware ─────────────────────────────────────
 app.use(helmet());
 app.use(
@@ -29,7 +32,9 @@ const limiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
 });
-app.use('/api', limiter);
+if (config.nodeEnv === 'production') {
+  app.use('/api', limiter);
+}
 
 // ── Body Parsing ────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));

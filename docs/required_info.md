@@ -24,8 +24,7 @@ Everything a developer needs before touching this codebase.
 |---|---|---|---|
 | PostgreSQL Primary | bounty-postgres-master | 5432 | All writes |
 | PostgreSQL Replica | bounty-postgres-replica | 5433 | WAL reads (Sync Worker) |
-| Redis Master | bounty-redis | 6369 | Cache writes, stream publish |
-| Redis Replica | bounty-redis-replica | 6380 | Cache reads, autocomplete |
+| Redis | bounty-redis | 6369 | Cache, autocomplete, stream publish |
 | MongoDB Primary | bounty-mongo-primary | 27017 | Write target for Sync Worker |
 | MongoDB Replica | bounty-mongo-replica | 27018 | Read replica for Discovery |
 | Backend API | bounty-server | 5000 | All API endpoints |
@@ -53,10 +52,8 @@ Everything a developer needs before touching this codebase.
 - Replica connects to master via `POSTGRESQL_MASTER_HOST=postgres-master`
 - Sync Worker reads from replica only — primary is write-only from app perspective
 
-### Redis Replication
-- Replica runs: `redis-server --replicaof redis-master 6379`
-- All cache writes → master (port 6369)
-- All cache reads → replica (port 6380) via `redisRead` client in `redis.js`
+### Redis Configuration
+- Single Redis instance handles cache reads/writes, autocomplete, and stream events on port 6369
 
 ### MongoDB Replica Set
 - Set name: `rs0`
@@ -74,8 +71,7 @@ DATABASE_URL          # Master — used by prisma (writes)
 DATABASE_READ_URL     # Replica — used by prismaRead (reads)
 
 # Redis
-REDIS_URL             # Master — used by redis (writes + publish)
-REDIS_READ_URL        # Replica — used by redisRead (gets + zrange)
+REDIS_URL             # Single Redis endpoint — cache, autocomplete, stream
 
 # MongoDB
 MONGODB_URL           # Replica set URI — single connection, driver routes reads/writes
@@ -152,8 +148,8 @@ docker exec bounty-server npm run seed
 docker exec bounty-postgres-replica psql -U postgres -c \
   "SELECT now() - pg_last_xact_replay_timestamp() AS lag;"
 
-# Check Redis replication info
-docker exec bounty-redis-replica redis-cli info replication
+# Check Redis health
+docker exec bounty-redis redis-cli ping
 
 # Check MongoDB replica set
 docker exec bounty-mongo-primary mongosh -u root -p root \

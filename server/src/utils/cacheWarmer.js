@@ -18,9 +18,9 @@ function extractTerms(text) {
 async function warmSearchSuggestions() {
   if (!redis) return;
 
-  const existing = await redis.zcard('search:suggestions');
+  const existing = await redis.zcard('search:terms');
   if (existing >= 100) {
-    logger.info('[warmer] search:suggestions already populated, skipping');
+    logger.info('[warmer] search:terms already populated, skipping');
     return;
   }
 
@@ -36,6 +36,8 @@ async function warmSearchSuggestions() {
     const titleNorm = b.title.toLowerCase().trim();
     if (titleNorm.length >= 2 && !seen.has(titleNorm)) {
       pipeline.zincrby('search:suggestions', 5, titleNorm);
+      // Score 0 so ZRANGEBYLEX can do efficient prefix scans
+      pipeline.zadd('search:terms', 'NX', 0, titleNorm);
       seen.add(titleNorm);
     }
 
@@ -48,20 +50,23 @@ async function warmSearchSuggestions() {
     for (const term of terms) {
       if (!seen.has(term)) {
         pipeline.zincrby('search:suggestions', 1, term);
+        pipeline.zadd('search:terms', 'NX', 0, term);
         seen.add(term);
       }
     }
   }
 
   await pipeline.exec();
-  logger.info(`[warmer] seeded search:suggestions with ${seen.size} terms`);
+  logger.info(`[warmer] seeded search:suggestions and search:terms with ${seen.size} terms`);
 }
 
 async function warmBountyListCache() {
   try {
     await Promise.all([
       cacheGet(
-        'bounties:list:{"skip":0,"take":10,"where":{},"sortBy":undefined}',
+        // Key must match what bountyService.list() generates via JSON.stringify({ skip, take, where, sortBy }).
+        // JSON.stringify drops undefined values, so the default (no sortBy) key has no sortBy field.
+        'bounties:list:{"skip":0,"take":10,"where":{}}',
         () => bountyRepository.findMany({ skip: 0, take: 10, where: {}, orderBy: { createdAt: 'desc' } }),
         600
       ),

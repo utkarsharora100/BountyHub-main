@@ -12,7 +12,6 @@ module.exports = {
 
   redis: {
     url: process.env.REDIS_URL || 'redis://localhost:6379',
-    readUrl: process.env.REDIS_READ_URL || process.env.REDIS_URL,
   },
 
   mongodb: {

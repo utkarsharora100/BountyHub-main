@@ -19,5 +19,5 @@ COPY . .
 
 EXPOSE 5000
 
-# Start script: push schema to master + replica, seed, then start server
-CMD ["sh", "-c", "npx prisma db push --skip-generate && DATABASE_URL=$DATABASE_READ_URL npx prisma db push --skip-generate && node prisma/seed.js && node src/index.js"]
+# API container should only run the server process.
+CMD ["node", "src/index.js"]

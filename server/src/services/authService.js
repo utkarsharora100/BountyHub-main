@@ -35,7 +35,7 @@ const authService = {
 };
 
 function generateToken(user) {
-  return jwt.sign({ id: user.id, email: user.email }, config.jwt.secret, {
+  return jwt.sign({ id: user.id, email: user.email, role: user.role }, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
   });
 }
