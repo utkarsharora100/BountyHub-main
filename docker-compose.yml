@@ -1,5 +1,5 @@
 # ─── Docker Compose: Full Stack ───────────────────────────────
-# Spins up PostgreSQL (master + read replica), Redis, API server, and client
+# Spins up PostgreSQL (master + read replica), Redis, MongoDB (primary + replica), API server, and client
 
 services:
   # ── PostgreSQL Master ──────────────────────────────────────
@@ -23,7 +23,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── PostgreSQL Read Replica ──────────────────────────────────
+  # ── PostgreSQL Read Replica ────────────────────────────────
   postgres-replica:
     image: bitnamilegacy/postgresql:16
     container_name: bounty-postgres-replica
@@ -33,7 +33,6 @@ services:
       POSTGRESQL_REPLICATION_PASSWORD: repl_password
       POSTGRESQL_MASTER_HOST: postgres-master
       POSTGRESQL_MASTER_PORT_NUMBER: 5432
-      # The missing variable required for Bitnami replica initialization
       POSTGRESQL_PASSWORD: postgres123
     ports:
       - "5433:5432"
@@ -42,7 +41,7 @@ services:
     depends_on:
       postgres-master:
         condition: service_healthy
-    healthcheck: 
+    healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d bounty_platform"]
       interval: 5s
       timeout: 5s
@@ -53,7 +52,6 @@ services:
     image: redis:7-alpine
     container_name: bounty-redis
     ports:
-      # Maps host 6369 to container internal 6379
       - "6369:6379"
     volumes:
       - redis_master:/data
@@ -68,11 +66,9 @@ services:
     image: redis:7-alpine
     container_name: bounty-redis-replica
     ports:
-      # Maps host 6380 to container internal 6379
       - "6380:6379"
     volumes:
       - redis_replica:/data
-    # Replicates from the master's internal container port
     command: redis-server --replicaof redis-master 6379
     depends_on:
       redis-master:
@@ -82,7 +78,54 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-  
+
+  # ── MongoDB Primary ────────────────────────────────────────
+  mongo-primary:
+    image: bitnami/mongodb
+    container_name: bounty-mongo-primary
+    environment:
+      MONGODB_REPLICA_SET_MODE: primary
+      MONGODB_REPLICA_SET_NAME: rs0
+      MONGODB_REPLICA_SET_KEY: replicasetkey123
+      MONGODB_ROOT_PASSWORD: root
+      MONGODB_DATABASE: bounty_platform
+      MONGODB_USERNAME: utkarsh
+      MONGODB_PASSWORD: "123456"
+      MONGODB_ADVERTISED_HOSTNAME: mongo-primary
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_primary_data:/bitnami/mongodb
+    healthcheck:
+      test: ["CMD", "mongosh", "-u", "root", "-p", "root", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MongoDB Replica ────────────────────────────────────────
+  mongo-replica:
+    image: bitnami/mongodb
+    container_name: bounty-mongo-replica
+    environment:
+      MONGODB_REPLICA_SET_MODE: secondary
+      MONGODB_REPLICA_SET_NAME: rs0
+      MONGODB_REPLICA_SET_KEY: replicasetkey123
+      MONGODB_PRIMARY_HOST: mongo-primary
+      MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD: root
+      MONGODB_ADVERTISED_HOSTNAME: mongo-replica
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_replica_data:/bitnami/mongodb
+    depends_on:
+      mongo-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "mongosh", "-u", "root", "-p", "root", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── Backend API Server ─────────────────────────────────────
   server:
     build:
@@ -92,11 +135,14 @@ services:
     ports:
       - "5000:5000"
     environment:
-      # Docker internal network uses standard container ports (5432 and 6379)
       DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
       DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
       REDIS_URL: "redis://redis-master:6379"
       REDIS_READ_URL: "redis://redis-replica:6379"
+      # Single replica set URI — driver handles primary writes & secondary reads automatically.
+      # readPreference=secondaryPreferred routes reads to the replica when available.
+      # authSource must match the database where the app user (utkarsh) was created.
+      MONGODB_URL: "mongodb://utkarsh:123456@mongo-primary:27017,mongo-replica:27017/bounty_platform?replicaSet=rs0&readPreference=secondaryPreferred&authSource=bounty_platform"
       JWT_SECRET: "docker-jwt-secret-change-in-production"
       JWT_EXPIRES_IN: "7d"
       PORT: 5000
@@ -110,6 +156,10 @@ services:
       redis-master:
         condition: service_healthy
       redis-replica:
+        condition: service_healthy
+      mongo-primary:
+        condition: service_healthy
+      mongo-replica:
         condition: service_healthy
     volumes:
       - ./server/src:/app/src
@@ -126,6 +176,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: "http://server:5000"
     depends_on:
+      # The client won't start until the server is running
       - server
 
 volumes:
@@ -133,3 +184,5 @@ volumes:
   pgdata-replica:
   redis_master:
   redis_replica:
+  mongodb_primary_data:
+  mongodb_replica_data:

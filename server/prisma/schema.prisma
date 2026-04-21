@@ -27,6 +27,11 @@ model University {
 }
 
 // ─── Users ──────────────────────────────────────────────────────
+enum UserRole {
+  STUDENT
+  STAFF
+}
+
 model User {
   id           Int    @id @default(autoincrement())
   name         String @db.VarChar(150)
@@ -35,6 +40,7 @@ model User {
   avatarUrl    String? @map("avatar_url") @db.VarChar(500)
   universityId Int    @map("university_id")
   reputation   Int    @default(0)
+  role         UserRole @default(STUDENT)
 
   university University @relation(fields: [universityId], references: [id])
 

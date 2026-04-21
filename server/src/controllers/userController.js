@@ -42,6 +42,15 @@ const userController = {
       next(err);
     }
   },
+
+  async getUniversities(req, res, next) {
+    try {
+      const universities = await userService.getUniversities();
+      res.json(universities);
+    } catch (err) {
+      next(err);
+    }
+  },
 };
 
 module.exports = userController;

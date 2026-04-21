@@ -29,6 +29,11 @@ const userService = {
   async getLeaderboard(limit = 20) {
     return cacheGet(`leaderboard:top${limit}`, () => userRepository.getLeaderboard(limit), 60);
   },
+
+  // Cache universities for 10 minutes — they basically never change after seed.
+  async getUniversities() {
+    return cacheGet('universities:all', () => userRepository.getAllUniversities(), 600);
+  },
 };
 
 module.exports = userService;

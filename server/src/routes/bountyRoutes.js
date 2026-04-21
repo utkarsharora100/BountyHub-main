@@ -11,6 +11,7 @@ const commentController = require('../controllers/commentController');
 const router = Router();
 
 // ── Bounty CRUD ─────────────────────────────────────────────
+router.get('/meta', bountyController.meta);      // must be before /:id
 router.get('/trending', bountyController.trending);
 router.get('/search', bountyController.search);
 router.get('/', bountyController.list);
