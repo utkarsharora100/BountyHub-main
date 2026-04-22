@@ -126,6 +126,12 @@ async function startConsumerLoop() {
     return;
   }
 
+  // With enableOfflineQueue: false, commands fail during the 'connecting' phase.
+  // Wait for 'ready' so xgroup isn't issued before the TCP handshake completes.
+  if (redis.status !== 'ready') {
+    await new Promise((resolve) => redis.once('ready', resolve));
+  }
+
   // Create consumer group if it doesn't exist (MKSTREAM creates the stream too)
   try {
     await redis.xgroup('CREATE', STREAM_KEY, GROUP_NAME, '$', 'MKSTREAM');

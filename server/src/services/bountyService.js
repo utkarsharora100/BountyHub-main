@@ -90,8 +90,8 @@ const bountyService = {
     const cacheKey = `bounties:search:${query}:${page}:${limit}`;
     return cacheGet(cacheKey, async () => {
       const mongoResult = await discoveryService.search(query, skip, parseInt(limit));
-      if (mongoResult) return mongoResult;
-      // Fallback: PostgreSQL read replica when MongoDB is unavailable
+      if (mongoResult && mongoResult.total > 0) return mongoResult;
+      // Fallback: MongoDB unavailable or catalog not yet populated
       return bountyRepository.search(query, skip, parseInt(limit));
     }, 600);
   },
