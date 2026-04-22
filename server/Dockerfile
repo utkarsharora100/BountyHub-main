@@ -19,5 +19,5 @@ COPY . .
 
 EXPOSE 5000
 
-# API container should only run the server process.
-CMD ["node", "src/index.js"]
+# Compose runs schema push + seed in db-init; API containers only wait and serve.
+CMD ["sh", "-c", "node scripts/wait-for-read-model.js --seeded && node src/index.js"]

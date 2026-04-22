@@ -7,8 +7,8 @@ const AppError = require('../utils/AppError');
 
 const commentService = {
   async addComment(userId, bountyId, content) {
-    const exists = await bountyRepository.existsById(bountyId);
-    if (!exists) throw new AppError('Bounty not found', 404);
+    const bounty = await bountyRepository.findById(bountyId);
+    if (!bounty) throw new AppError('Bounty not found', 404);
 
     const comment = await commentRepository.create({ bountyId, userId, content });
     await cacheInvalidate('bounties:*');

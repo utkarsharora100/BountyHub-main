@@ -1,7 +1,6 @@
 // ─── Bounty Service ──────────────────────────────────────────
 const bountyRepository = require('../repositories/bountyRepository');
-const discoveryService = require('./discoveryService');
-const { cacheGet, cacheInvalidate, publishEvent } = require('../config/redis');
+const { cacheGet, cacheInvalidate } = require('../config/redis');
 const AppError = require('../utils/AppError');
 const searchService = require('./searchService');
 const { publishBountyEvent } = require('./eventBus');
@@ -46,7 +45,7 @@ const bountyService = {
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await publishEvent('BOUNTY_CREATED', { bountyId: bounty.id, createdBy: userId });
+    await publishReadModelRefresh(bounty.id);
     return bounty;
   },
 
@@ -77,7 +76,7 @@ const bountyService = {
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await publishEvent('BOUNTY_UPDATED', { bountyId, universityId: bounty.creator?.universityId });
+    await publishReadModelRefresh(bountyId);
     return updated;
   },
 
@@ -86,17 +85,14 @@ const bountyService = {
     if (!bounty) throw new AppError('Bounty not found', 404);
     if (bounty.createdBy !== userId) throw new AppError('Not authorized', 403);
 
-    // Capture universityId before deletion — needed by sync worker to remove from catalog
-    const universityId = bounty.creator?.universityId;
     await bountyRepository.delete(bountyId);
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await publishEvent('BOUNTY_DELETED', { bountyId, universityId });
+    await publishBountyEvent('bounty.deleted', bountyId);
   },
 
   async getById(bountyId) {
-    // 300s TTL — cacheInvalidate('bounties:*') fires on update/delete/bid-accept/submission-accept
-    const bounty = await cacheGet(`bounties:detail:${bountyId}`, () => bountyRepository.findById(bountyId), 300);
+    const bounty = await bountyRepository.findById(bountyId);
     if (!bounty) throw new AppError('Bounty not found', 404);
     return bounty;
   },
@@ -125,28 +121,27 @@ const bountyService = {
       default: orderBy = { createdAt: 'desc' };
     }
 
-    // 'newest' is the UI label for the default sort — normalise to undefined so the
-    // key matches what JSON.stringify produces when sortBy is absent.
-    const normalizedSortBy = ['reward', 'oldest', 'deadline'].includes(sortBy) ? sortBy : undefined;
-    const cacheKey = `bounties:list:${JSON.stringify({ skip, take, where, sortBy: normalizedSortBy })}`;
-    // 600s TTL — cacheInvalidate('bounties:*') fires on every write, so stale data can't persist
-    return cacheGet(cacheKey, () => bountyRepository.findMany({ skip, take, where, orderBy }), 600);
+    const cacheKey = `bounties:list:${JSON.stringify({ skip, take, where, sortBy })}`;
+    return cacheGet(cacheKey, () => bountyRepository.findMany({ skip, take, where, orderBy }), 30);
   },
 
   async search(query, page = 1, limit = 10) {
     if (!query || query.trim().length < 2) throw new AppError('Search query too short', 400);
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const cacheKey = `bounties:search:${query}:${page}:${limit}`;
-    return cacheGet(cacheKey, async () => {
-      const mongoResult = await discoveryService.search(query, skip, parseInt(limit));
-      if (mongoResult && mongoResult.total > 0) return mongoResult;
-      // Fallback: MongoDB unavailable or catalog not yet populated
-      return bountyRepository.search(query, skip, parseInt(limit));
-    }, 600);
+    const result = await cacheGet(cacheKey, async () => (
+      await searchService.searchBounties(query, page, limit)
+      || bountyRepository.search(query, skip, parseInt(limit))
+    ), 60);
+
+    if (result.total === 0) {
+      searchService.logUnmetDemand(query).catch(() => {});
+    }
+    return result;
   },
 
   async getTrending() {
-    return cacheGet('trending:bounties', () => bountyRepository.getTrending(10), 600);
+    return cacheGet('trending:bounties', () => bountyRepository.getTrending(10), 60);
   },
 };
 

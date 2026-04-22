@@ -38,17 +38,12 @@ const bountyRepository = {
   },
 
   // ── READ (replica) ─────────────────────────────────────────
-  async existsById(id) {
-    const row = await prismaRead.bounty.findUnique({ where: { id }, select: { id: true } });
-    return row !== null;
-  },
-
   async findById(id) {
     return prismaRead.bounty.findUnique({
       where: { id },
       include: {
         creator: {
-          select: { id: true, name: true, avatarUrl: true, reputation: true, universityId: true, university: { select: { name: true } } },
+          select: { id: true, name: true, avatarUrl: true, reputation: true, university: { select: { name: true } } },
         },
         _count: { select: { bids: true, submissions: true, comments: true } },
       },
@@ -132,11 +127,19 @@ const bountyRepository = {
 
   // Search fallback using PostgreSQL when Redis is unavailable.
   async search(query, skip, take) {
+    const skillTerms = query.trim().split(/\s+/).filter(Boolean);
     const where = {
-      status: { notIn: ['CANCELLED'] },
-      OR: [
-        { title: { contains: query, mode: 'insensitive' } },
-        { description: { contains: query, mode: 'insensitive' } },
+      status: 'OPEN',
+      AND: [
+        { OR: [{ deadline: null }, { deadline: { gt: new Date() } }] },
+        {
+          OR: [
+            { title: { contains: query, mode: 'insensitive' } },
+            { description: { contains: query, mode: 'insensitive' } },
+            { department: { contains: query, mode: 'insensitive' } },
+            { skills: { hasSome: skillTerms } },
+          ],
+        },
       ],
     };
 
@@ -150,39 +153,10 @@ const bountyRepository = {
           creator: {
             select: { id: true, name: true, avatarUrl: true, university: { select: { name: true } } },
           },
+          _count: { select: { bids: true, submissions: true, comments: true } },
         },
       }),
       prismaRead.bounty.count({ where }),
-    ]);
-    return { bounties, total };
-  },
-
-  // Lightweight title-only lookup for autocomplete fallback.
-  async searchTitles(prefix, take = 8) {
-    const rows = await prismaRead.bounty.findMany({
-      where: {
-        title: { contains: prefix, mode: 'insensitive' },
-      },
-      select: { title: true },
-      take,
-      distinct: ['title'],
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map((r) => r.title.toLowerCase());
-  },
-
-  async findByCreator(userId, skip, take) {
-    const [bounties, total] = await Promise.all([
-      prismaRead.bounty.findMany({
-        where: { createdBy: userId },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take,
-        include: {
-          _count: { select: { bids: true, submissions: true } },
-        },
-      }),
-      prismaRead.bounty.count({ where: { createdBy: userId } }),
     ]);
     return { bounties, total };
   },
