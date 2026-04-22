@@ -147,11 +147,9 @@ docker compose up --build
 
 That's it! Docker will:
 1. Spin up PostgreSQL master (port 5432) + read replica (port 5433)
-2. Spin up Redis master (host port 6369), Redis replica (6380), and MongoDB catalog (27017)
-3. Run `db-init` once to push the Prisma schema and seed demo data
-4. Start the API server, catalog sync worker, Next.js frontend, and Nginx edge proxy
-
-Open the full stack at `http://localhost:8080`.
+2. Spin up Redis (port 6379)
+3. Build and start the API server (port 5000), run migrations, and seed data
+4. Build and start the Next.js frontend (port 3000)
 
 **Useful Docker commands:**
 ```bash
@@ -205,8 +203,6 @@ Edit `server/.env` with your PostgreSQL and Redis credentials:
 DATABASE_URL="postgresql://postgres:yourpassword@localhost:5432/bounty_platform"
 DATABASE_READ_URL="postgresql://postgres:yourpassword@localhost:5432/bounty_platform"
 REDIS_URL="redis://localhost:6379"
-MONGODB_URL="mongodb://localhost:27017"
-MONGODB_DB="bounty_catalog"
 JWT_SECRET="change-this-to-a-random-secret"
 ```
 

@@ -12,22 +12,11 @@ const searchController = {
     }
   },
 
-  async matches(req, res, next) {
-    try {
-      const prefix = req.query.q || '';
-      const limit = req.query.limit || 6;
-      const matches = await searchService.getMatches(prefix, limit);
-      res.json(matches);
-    } catch (err) {
-      next(err);
-    }
-  },
-
   async unmetDemand(req, res, next) {
     try {
-      const limit = req.query.limit || 25;
-      const demand = await searchService.getUnmetDemand(limit);
-      res.json(demand);
+      const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+      const terms = await searchService.getUnmetDemand(limit);
+      res.json(terms);
     } catch (err) {
       next(err);
     }

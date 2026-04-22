@@ -3,30 +3,38 @@ const Redis = require('ioredis');
 const config = require('./index');
 const logger = require('../utils/logger');
 
-let redis;
-
-try {
-  redis = new Redis(config.redis.url, {
-    maxRetriesPerRequest: 3,
+// maxRetriesPerRequest: 1 — each command gets one retry then rejects immediately
+//   (no queueing while reconnecting, no hanging callers).
+// enableOfflineQueue: false — commands issued while disconnected fail immediately
+//   so try/catch fallbacks in cacheGet/cacheInvalidate/publishEvent fire right away.
+// retryStrategy without a cap — connection retries forever with backoff so the
+//   client self-heals when Redis comes back without needing a server restart.
+//   Returning null here would put ioredis into a permanent "broken" state where
+//   every subsequent command throws, which is silently swallowed and looks like
+//   Redis is up but caching/events are silently dead.
+function makeClient(url, label) {
+  const client = new Redis(url, {
+    maxRetriesPerRequest: 1,
+    enableOfflineQueue: false,
     retryStrategy(times) {
-      if (times > 3) return null; // stop retrying
-      return Math.min(times * 200, 2000);
+      return Math.min(times * 300, 5000);
     },
   });
-
-  redis.on('connect', () => logger.info('Redis connected'));
-  redis.on('error', (err) => logger.error(`Redis error: ${err?.message || err?.code || String(err)}`));
-} catch (err) {
-  logger.warn('Redis unavailable, caching disabled');
-  redis = null;
+  client.on('connect', () => logger.info(`${label} connected`));
+  client.on('error', (err) => logger.warn(`${label} error: ${err.message}`));
+  client.on('end', () => logger.warn(`${label} connection closed — will retry`));
+  return client;
 }
+
+let redis    = config.redis.url    ? makeClient(config.redis.url,     'Redis master')  : null;
+let redisRead = config.redis.readUrl ? makeClient(config.redis.readUrl, 'Redis replica') : null;
 
 // Helper: get cached value or execute fetcher
 async function cacheGet(key, fetcher, ttlSeconds = 300) {
   if (!redis) return fetcher();
 
   try {
-    const cached = await redis.get(key);
+    const cached = redisRead ? await redisRead.get(key) : await redis.get(key);
     if (cached) return JSON.parse(cached);
   } catch {
     // cache miss or error — fall through
@@ -47,15 +55,21 @@ async function cacheGet(key, fetcher, ttlSeconds = 300) {
 async function cacheInvalidate(pattern) {
   if (!redis) return;
   try {
-    let cursor = '0';
-    do {
-      const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
-      cursor = nextCursor;
-      if (keys.length) await redis.del(...keys);
-    } while (cursor !== '0');
+    const keys = await redis.keys(pattern);
+    if (keys.length) await redis.del(...keys);
   } catch {
     // ignore
   }
 }
 
-module.exports = { redis, cacheGet, cacheInvalidate };
+// Helper: publish event to Redis Stream event bus
+async function publishEvent(type, payload) {
+  if (!redis) return;
+  try {
+    await redis.xadd('events:bounty', '*', 'type', type, 'data', JSON.stringify(payload));
+  } catch {
+    // ignore publish errors — do not fail the calling transaction
+  }
+}
+
+module.exports = { redis, redisRead, cacheGet, cacheInvalidate, publishEvent };

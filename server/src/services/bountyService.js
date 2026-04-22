@@ -1,51 +1,22 @@
 // ─── Bounty Service ──────────────────────────────────────────
 const bountyRepository = require('../repositories/bountyRepository');
-const { cacheGet, cacheInvalidate } = require('../config/redis');
+const discoveryService = require('./discoveryService');
+const { cacheGet, cacheInvalidate, publishEvent } = require('../config/redis');
 const AppError = require('../utils/AppError');
-const searchService = require('./searchService');
-const { publishBountyEvent } = require('./eventBus');
-
-const VALID_STATUSES = new Set(['OPEN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']);
-const VALID_CATEGORIES = new Set(['CODING', 'RESEARCH', 'DESIGN', 'DEBUGGING', 'DOCUMENTATION', 'OTHER']);
-const VALID_SORTS = new Set(['newest', 'oldest', 'reward', 'deadline']);
-
-function assertFutureDeadline(deadline) {
-  if (!deadline) return null;
-  const parsed = new Date(deadline);
-  if (Number.isNaN(parsed.getTime())) throw new AppError('Invalid deadline', 400);
-  if (parsed <= new Date()) throw new AppError('Deadline must be in the future', 400);
-  return parsed;
-}
-
-function normalizeSkills(skills) {
-  if (!skills) return [];
-  const values = Array.isArray(skills) ? skills : String(skills).split(',');
-  return [...new Set(values.map((skill) => String(skill).trim()).filter(Boolean))].slice(0, 20);
-}
-
-async function publishReadModelRefresh(bountyId) {
-  await publishBountyEvent('bounty.upserted', bountyId);
-}
 
 const bountyService = {
   async create(userId, data) {
-    const deadline = assertFutureDeadline(data.deadline);
-    if (data.category && !VALID_CATEGORIES.has(data.category)) {
-      throw new AppError('Invalid bounty category', 400);
-    }
     const bounty = await bountyRepository.create({
       title: data.title,
       description: data.description,
       rewardPoints: parseInt(data.rewardPoints),
       category: data.category || 'OTHER',
-      department: data.department || null,
-      skills: normalizeSkills(data.skills),
-      deadline,
+      deadline: data.deadline ? new Date(data.deadline) : null,
       createdBy: userId,
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await publishReadModelRefresh(bounty.id);
+    await publishEvent('BOUNTY_CREATED', { bountyId: bounty.id, createdBy: userId });
     return bounty;
   },
 
@@ -53,30 +24,18 @@ const bountyService = {
     const bounty = await bountyRepository.findById(bountyId);
     if (!bounty) throw new AppError('Bounty not found', 404);
     if (bounty.createdBy !== userId) throw new AppError('Not authorized', 403);
-    if (data.category && !VALID_CATEGORIES.has(data.category)) {
-      throw new AppError('Invalid bounty category', 400);
-    }
-    if (data.status && !['OPEN', 'CANCELLED'].includes(data.status)) {
-      throw new AppError('Bounty status can only be reopened or cancelled from this endpoint', 400);
-    }
-    if (bounty.status === 'COMPLETED') {
-      throw new AppError('Completed bounties cannot be edited', 400);
-    }
 
-    const deadline = data.deadline ? assertFutureDeadline(data.deadline) : null;
     const updated = await bountyRepository.update(bountyId, {
       ...(data.title && { title: data.title }),
       ...(data.description && { description: data.description }),
       ...(data.rewardPoints && { rewardPoints: parseInt(data.rewardPoints) }),
       ...(data.category && { category: data.category }),
-      ...(Object.prototype.hasOwnProperty.call(data, 'department') && { department: data.department || null }),
-      ...(Object.prototype.hasOwnProperty.call(data, 'skills') && { skills: normalizeSkills(data.skills) }),
       ...(data.status && { status: data.status }),
-      ...(data.deadline && { deadline }),
+      ...(data.deadline && { deadline: new Date(data.deadline) }),
     });
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await publishReadModelRefresh(bountyId);
+    await publishEvent('BOUNTY_UPDATED', { bountyId, universityId: bounty.creator?.universityId });
     return updated;
   },
 
@@ -85,14 +44,17 @@ const bountyService = {
     if (!bounty) throw new AppError('Bounty not found', 404);
     if (bounty.createdBy !== userId) throw new AppError('Not authorized', 403);
 
+    // Capture universityId before deletion — needed by sync worker to remove from catalog
+    const universityId = bounty.creator?.universityId;
     await bountyRepository.delete(bountyId);
     await cacheInvalidate('bounties:*');
     await cacheInvalidate('trending:*');
-    await publishBountyEvent('bounty.deleted', bountyId);
+    await publishEvent('BOUNTY_DELETED', { bountyId, universityId });
   },
 
   async getById(bountyId) {
-    const bounty = await bountyRepository.findById(bountyId);
+    // 300s TTL — cacheInvalidate('bounties:*') fires on update/delete/bid-accept/submission-accept
+    const bounty = await cacheGet(`bounties:detail:${bountyId}`, () => bountyRepository.findById(bountyId), 300);
     if (!bounty) throw new AppError('Bounty not found', 404);
     return bounty;
   },
@@ -103,15 +65,8 @@ const bountyService = {
     const take = parseInt(limit);
 
     const where = {};
-    if (status) {
-      if (!VALID_STATUSES.has(status)) throw new AppError('Invalid bounty status', 400);
-      where.status = status;
-    }
-    if (category) {
-      if (!VALID_CATEGORIES.has(category)) throw new AppError('Invalid bounty category', 400);
-      where.category = category;
-    }
-    if (sortBy && !VALID_SORTS.has(sortBy)) throw new AppError('Invalid sort option', 400);
+    if (status) where.status = status;
+    if (category) where.category = category;
 
     let orderBy;
     switch (sortBy) {
@@ -121,27 +76,28 @@ const bountyService = {
       default: orderBy = { createdAt: 'desc' };
     }
 
-    const cacheKey = `bounties:list:${JSON.stringify({ skip, take, where, sortBy })}`;
-    return cacheGet(cacheKey, () => bountyRepository.findMany({ skip, take, where, orderBy }), 30);
+    // 'newest' is the UI label for the default sort — normalise to undefined so the
+    // key matches what JSON.stringify produces when sortBy is absent.
+    const normalizedSortBy = ['reward', 'oldest', 'deadline'].includes(sortBy) ? sortBy : undefined;
+    const cacheKey = `bounties:list:${JSON.stringify({ skip, take, where, sortBy: normalizedSortBy })}`;
+    // 600s TTL — cacheInvalidate('bounties:*') fires on every write, so stale data can't persist
+    return cacheGet(cacheKey, () => bountyRepository.findMany({ skip, take, where, orderBy }), 600);
   },
 
   async search(query, page = 1, limit = 10) {
     if (!query || query.trim().length < 2) throw new AppError('Search query too short', 400);
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const cacheKey = `bounties:search:${query}:${page}:${limit}`;
-    const result = await cacheGet(cacheKey, async () => (
-      await searchService.searchBounties(query, page, limit)
-      || bountyRepository.search(query, skip, parseInt(limit))
-    ), 60);
-
-    if (result.total === 0) {
-      searchService.logUnmetDemand(query).catch(() => {});
-    }
-    return result;
+    const cacheKey = `bounties:search:${encodeURIComponent(query.trim())}:${page}:${limit}`;
+    return cacheGet(cacheKey, async () => {
+      const mongoResult = await discoveryService.search(query, skip, parseInt(limit));
+      if (mongoResult && mongoResult.total > 0) return mongoResult;
+      // Fallback: MongoDB unavailable or catalog not yet populated
+      return bountyRepository.search(query, skip, parseInt(limit));
+    }, 600);
   },
 
   async getTrending() {
-    return cacheGet('trending:bounties', () => bountyRepository.getTrending(10), 60);
+    return cacheGet('trending:bounties', () => bountyRepository.getTrending(10), 600);
   },
 };
 

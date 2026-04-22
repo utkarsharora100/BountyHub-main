@@ -1,38 +1,63 @@
-// ─── Search Page ─────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/router';
 import api from '../lib/api';
 import BountyCard from '../components/BountyCard';
-import { BountyCardSkeleton } from '../components/Skeletons';
 import Pagination from '../components/Pagination';
 import { Search as SearchIcon, X } from 'lucide-react';
 
 export default function SearchPage() {
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(null);
-  const [matches, setMatches] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [matching, setMatching] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [page, setPage] = useState(1);
   const inputRef = useRef();
   const debounceRef = useRef();
+  const containerRef = useRef();
+  // Guard so the URL-restore effect only fires once on initial mount
+  const hasInitialized = useRef(false);
 
-  // Autocomplete match tiles
+  // Restore search state from URL on initial load (handles back-navigation)
+  useEffect(() => {
+    if (!router.isReady || hasInitialized.current) return;
+    hasInitialized.current = true;
+    const q = typeof router.query.q === 'string' ? router.query.q : '';
+    const p = parseInt(router.query.page) || 1;
+    if (q) {
+      setQuery(q);
+      setPage(p);
+      doSearch(q, p);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady]);
+
+  // Close suggestions when clicking outside the search container
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Debounce autocomplete so we're not hitting the API on every keystroke
   useEffect(() => {
     if (query.length < 2) {
-      setMatches([]);
-      setMatching(false);
+      setSuggestions([]);
       return;
     }
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      setMatching(true);
       try {
-        const data = await api.get(`/search/matches?q=${encodeURIComponent(query)}&limit=9`);
-        setMatches(data);
+        const data = await api.get(`/search/suggestions?q=${encodeURIComponent(query)}`);
+        setSuggestions(data);
+        setShowSuggestions(true);
       } catch {
-        setMatches([]);
-      } finally {
-        setMatching(false);
+        setSuggestions([]);
       }
     }, 300);
     return () => clearTimeout(debounceRef.current);
@@ -40,9 +65,20 @@ export default function SearchPage() {
 
   async function doSearch(searchQuery, searchPage = 1) {
     if (!searchQuery || searchQuery.length < 2) return;
+    // Persist search in URL so back-navigation restores the results
+    router.replace(
+      { pathname: '/search', query: { q: searchQuery, ...(searchPage > 1 && { page: searchPage }) } },
+      undefined,
+      { shallow: true }
+    );
+    // Clear stale results immediately so old count/pagination don't flash with new query
+    setResults(null);
     setLoading(true);
+    setShowSuggestions(false);
     try {
-      const data = await api.get(`/bounties/search?q=${encodeURIComponent(searchQuery)}&page=${searchPage}&limit=9`);
+      const data = await api.get(
+        `/bounties/search?q=${encodeURIComponent(searchQuery)}&page=${searchPage}&limit=15`
+      );
       setResults(data);
     } catch {
       setResults({ data: [], pagination: {} });
@@ -57,108 +93,121 @@ export default function SearchPage() {
     doSearch(query, 1);
   };
 
+  const handleSuggestionClick = (s) => {
+    setQuery(s);
+    setShowSuggestions(false);
+    setPage(1);
+    doSearch(s, 1);
+  };
+
   const handlePageChange = (p) => {
     setPage(p);
     doSearch(query, p);
     window.scrollTo(0, 0);
   };
 
-  const handleQueryChange = (e) => {
-    setQuery(e.target.value);
-    setResults(null);
-    setPage(1);
-  };
-
-  const clearSearch = () => {
-    setQuery('');
-    setResults(null);
-    setMatches([]);
-    setMatching(false);
-  };
-
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-      <h1 className="text-3xl font-bold text-center">Search Bounties</h1>
+    <div className="max-w-4xl mx-auto space-y-0 animate-fade-in">
 
-      {/* Search Bar */}
-      <form onSubmit={handleSubmit} className="relative">
-        <div className="relative">
-          <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={handleQueryChange}
-            className="input pl-12 pr-12 py-3 text-lg"
-            placeholder="Search for bounties... (e.g., machine learning, API, React)"
-          />
-          {query && (
-            <button type="button" onClick={clearSearch} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-      </form>
+      {/* Page header */}
+      <div className="py-4 border-b border-gray-200 dark:border-gray-800">
+        <h1 className="text-2xl font-bold">Search</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Find bounties by title or description</p>
+      </div>
 
-      {/* Results */}
-      {loading && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => <BountyCardSkeleton key={i} />)}
-        </div>
-      )}
+      {/* Search input with autocomplete dropdown */}
+      <div ref={containerRef} className="py-4 border-b border-gray-200 dark:border-gray-800">
+        <form onSubmit={handleSubmit} className="relative">
+          <div className="relative">
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              // 150ms delay lets the suggestion onClick fire before the blur closes the dropdown
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              className="input pl-10 pr-10 py-2.5"
+              placeholder="Search bounties... (e.g., machine learning, API, React)"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => { setQuery(''); setResults(null); setSuggestions([]); setShowSuggestions(false); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
 
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute z-10 w-full top-full mt-1 card py-1 shadow-lg">
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()} // prevent blur firing before click
+                    onClick={() => handleSuggestionClick(s)}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                  >
+                    <SearchIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </form>
+      </div>
+
+      {/* Results count — hidden while loading to avoid stale count+query mismatch */}
       {!loading && results && (
-        <>
-          <p className="text-sm text-gray-500">
-            {results.pagination?.total || 0} result{results.pagination?.total !== 1 ? 's' : ''} for &quot;{query}&quot;
-          </p>
-
-          {results.data?.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {results.data.map((b) => <BountyCard key={b.id} bounty={b} />)}
-            </div>
-          ) : (
-            <div className="text-center py-12 text-gray-500">
-              <p className="text-lg font-medium">No bounties found</p>
-              <p className="text-sm mt-1">Try different keywords</p>
-            </div>
-          )}
-
-          {results.pagination && (
-            <Pagination pagination={results.pagination} onPageChange={handlePageChange} />
-          )}
-        </>
-      )}
-
-      {!results && !loading && query.length >= 2 && (
-        <>
-          <p className="text-sm text-gray-500">
-            {matching ? 'Finding matches...' : `${matches.length} possible match${matches.length !== 1 ? 'es' : ''} for "${query}"`}
-          </p>
-
-          {matching ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[...Array(6)].map((_, i) => <BountyCardSkeleton key={i} />)}
-            </div>
-          ) : matches.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {matches.map((b) => <BountyCard key={b.id} bounty={b} />)}
-            </div>
-          ) : (
-            <div className="text-center py-12 text-gray-500">
-              <p className="text-lg font-medium">No quick matches</p>
-              <p className="text-sm mt-1">Press Enter to run a full search</p>
-            </div>
-          )}
-        </>
-      )}
-
-      {!results && !loading && query.length < 2 && (
-        <div className="text-center py-16 text-gray-400">
-          <SearchIcon className="w-16 h-16 mx-auto mb-4 opacity-30" />
-          <p className="text-lg">Start typing to search bounties</p>
-          <p className="text-sm mt-1">Search by title, description, or keywords</p>
+        <div className="py-2.5 border-b border-gray-200 dark:border-gray-800 text-sm text-gray-500">
+          {results.pagination?.total || 0} result{results.pagination?.total !== 1 ? 's' : ''} for &quot;{query.trim()}&quot;
         </div>
       )}
+
+      {/* Forum-style thread list for results */}
+      {(loading || (results?.data?.length > 0)) && (
+        <div className={`border border-t-0 border-gray-200 dark:border-gray-800 rounded-b-xl overflow-hidden`}>
+          {loading ? (
+            [...Array(6)].map((_, i) => (
+              <div key={i} className="flex gap-4 p-4 border-b border-gray-200 dark:border-gray-800 animate-pulse">
+                <div className="skeleton w-14 h-14 rounded-lg shrink-0" />
+                <div className="flex-1 space-y-2 py-1">
+                  <div className="skeleton h-4 w-2/3" />
+                  <div className="skeleton h-3 w-full" />
+                  <div className="skeleton h-3 w-1/3" />
+                </div>
+              </div>
+            ))
+          ) : (
+            results.data.map((b) => <BountyCard key={b.id} bounty={b} />)
+          )}
+        </div>
+      )}
+
+      {!loading && results?.data?.length === 0 && (
+        <div className="text-center py-16 text-gray-400">
+          <p className="font-medium">No results found for &quot;{query.trim()}&quot;</p>
+          <p className="text-sm mt-1">Try different keywords or check your spelling</p>
+        </div>
+      )}
+
+      {!loading && results?.pagination && (
+        <div className="pt-4">
+          <Pagination pagination={results.pagination} onPageChange={handlePageChange} />
+        </div>
+      )}
+
+      {/* Empty state before any search */}
+      {!results && !loading && (
+        <div className="text-center py-20 text-gray-400">
+          <SearchIcon className="w-12 h-12 mx-auto mb-3 opacity-25" />
+          <p className="text-base">Type to search bounties</p>
+        </div>
+      )}
+
     </div>
   );
 }

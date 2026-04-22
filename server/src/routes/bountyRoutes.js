@@ -11,6 +11,7 @@ const commentController = require('../controllers/commentController');
 const router = Router();
 
 // ── Bounty CRUD ─────────────────────────────────────────────
+router.get('/meta', bountyController.meta);      // must be before /:id
 router.get('/trending', bountyController.trending);
 router.get('/search', bountyController.search);
 router.get('/', bountyController.list);
@@ -23,7 +24,6 @@ router.post(
     body('title').trim().notEmpty().withMessage('Title required').isLength({ max: 300 }),
     body('description').trim().notEmpty().withMessage('Description required'),
     body('rewardPoints').isInt({ min: 1 }).withMessage('Reward points must be positive'),
-    body('department').optional({ nullable: true }).isLength({ max: 150 }).withMessage('Department is too long'),
   ],
   validate,
   bountyController.create

@@ -1,43 +1,35 @@
-const { MongoClient } = require('mongodb');
 const config = require('./index');
-const logger = require('../utils/logger');
 
-let client;
-let db;
-let unavailable = false;
-let lastFailureAt = 0;
-
-async function getMongoDb() {
-  if (!config.mongo.url) return null;
-  if (unavailable && Date.now() - lastFailureAt < 10000) return null;
-  unavailable = false;
-  if (db) return db;
-
-  try {
-    client = new MongoClient(config.mongo.url, {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 2000,
-    });
-    await client.connect();
-    db = client.db(config.mongo.dbName);
-    logger.info(`MongoDB catalog connected (${config.mongo.dbName})`);
-    return db;
-  } catch (err) {
-    unavailable = true;
-    lastFailureAt = Date.now();
-    logger.warn(`MongoDB catalog unavailable: ${err.message}`);
-    return null;
-  }
+// Guard BEFORE requiring mongoose. If MONGODB_URL isn't set (e.g. local dev without Docker)
+// and mongoose isn't installed yet, putting require('mongoose') at the top would throw
+// "Cannot find module 'mongoose'" before this check could do anything about it.
+if (!config.mongodb.url) {
+  console.warn('MONGODB_URL not set — MongoDB/discovery features disabled');
+  module.exports = { mongo: null, mongoRead: null };
+  return;
 }
 
-async function closeMongo() {
-  if (!client) return;
-  await client.close();
-  client = null;
-  db = null;
-}
+const mongoose = require('mongoose');
 
-module.exports = {
-  getMongoDb,
-  closeMongo,
-};
+// ONE connection for the entire replica set.
+//
+// The old pattern (two separate connections to the same replica set URI) caused
+// two independent topology monitors to probe the same nodes simultaneously — that's
+// the connection churn visible in the logs (pairs of connect/disconnect events).
+//
+// With a single connection the driver runs one topology monitor and routes internally:
+//   writes  → primary  (replicas reject writes, driver knows this)
+//   reads   → secondary (per readPreference=secondaryPreferred in the URI)
+const conn = mongoose.createConnection(config.mongodb.url, {
+  serverSelectionTimeoutMS: 5000,
+  heartbeatFrequencyMS: 10000,  // default is 10s anyway, but explicit is clearer
+});
+
+conn.on('connected', () => console.log('MongoDB replica set connected'));
+conn.on('error', (err) => console.error('MongoDB error:', err.message));
+conn.on('disconnected', () => console.warn('MongoDB disconnected — driver will retry'));
+
+// Both names point to the same connection object.
+// Document.js uses both exports; merging them avoids the OverwriteModelError that
+// would occur from registering the same Mongoose model twice on the same connection.
+module.exports = { mongo: conn, mongoRead: conn };

@@ -1,5 +1,4 @@
-// ─── Post New Bounty Page ────────────────────────────────────
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../hooks/useAuth';
 import api from '../../lib/api';
@@ -7,21 +6,29 @@ import toast from 'react-hot-toast';
 import { PlusCircle } from 'lucide-react';
 import Link from 'next/link';
 
-const CATEGORIES = ['CODING', 'RESEARCH', 'DESIGN', 'DEBUGGING', 'DOCUMENTATION', 'OTHER'];
-
 export default function NewBounty() {
   const { user } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [categories, setCategories] = useState([]);
   const [form, setForm] = useState({
     title: '',
     description: '',
     rewardPoints: '',
-    category: 'CODING',
-    department: '',
-    skills: '',
+    category: '',   // set once categories load
     deadline: '',
   });
+
+  // Fetch categories from the server so they stay in sync with the DB schema.
+  // We default the select to the first category once the list arrives.
+  useEffect(() => {
+    api.get('/bounties/meta').then((meta) => {
+      setCategories(meta.categories);
+      setForm((f) => ({ ...f, category: meta.categories[0]?.id || '' }));
+    }).catch(() => {
+      toast.error('Could not load categories');
+    });
+  }, []);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -33,7 +40,12 @@ export default function NewBounty() {
     }
     setLoading(true);
     try {
-      const bounty = await api.post('/bounties', form);
+      const { category, ...restForm } = form;
+      const bounty = await api.post('/bounties', {
+        ...restForm,
+        category: category,
+        rewardPoints: parseInt(restForm.rewardPoints),
+      });
       toast.success('Bounty posted!');
       router.push(`/bounties/${bounty.id}`);
     } catch (err) {
@@ -52,6 +64,15 @@ export default function NewBounty() {
     );
   }
 
+  if (user.role !== 'STAFF') {
+    return (
+      <div className="text-center py-20">
+        <p className="text-gray-500 mb-4">Only university staff members can post new tasks.</p>
+        <Link href="/" className="btn-secondary">Browse Tasks</Link>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
       <div className="card p-8">
@@ -63,46 +84,78 @@ export default function NewBounty() {
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-sm font-medium mb-1">Title</label>
-            <input name="title" value={form.title} onChange={handleChange} className="input" placeholder="e.g., Build a REST API for user management" required maxLength={300} />
+            <input
+              name="title"
+              value={form.title}
+              onChange={handleChange}
+              className="input"
+              placeholder="e.g., Build a REST API for user management"
+              required
+              maxLength={300}
+            />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea name="description" value={form.description} onChange={handleChange} className="input min-h-[160px]" placeholder="Describe the task in detail. Include requirements, deliverables, and any relevant links..." required />
+            <textarea
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+              className="input min-h-[160px]"
+              placeholder="Describe the task in detail. Include requirements, deliverables, and any relevant links..."
+              required
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Reward Points</label>
-              <input name="rewardPoints" type="number" min="1" value={form.rewardPoints} onChange={handleChange} className="input" placeholder="e.g., 100" required />
+              <input
+                name="rewardPoints"
+                type="number"
+                min="1"
+                value={form.rewardPoints}
+                onChange={handleChange}
+                className="input"
+                placeholder="e.g., 100"
+                required
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Category</label>
-              <select name="category" value={form.category} onChange={handleChange} className="input">
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+              <select
+                name="category"
+                value={form.category}
+                onChange={handleChange}
+                className="input"
+                disabled={categories.length === 0}
+              >
+                {categories.length === 0 && (
+                  <option value="">Loading...</option>
+                )}
+                {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Department (optional)</label>
-              <input name="department" value={form.department} onChange={handleChange} className="input" placeholder="e.g., Computer Science" maxLength={150} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Skills (optional)</label>
-              <input name="skills" value={form.skills} onChange={handleChange} className="input" placeholder="Python, Data Science, React" />
-            </div>
-          </div>
-
           <div>
             <label className="block text-sm font-medium mb-1">Deadline (optional)</label>
-            <input name="deadline" type="date" value={form.deadline} onChange={handleChange} className="input" />
+            <input
+              name="deadline"
+              type="date"
+              value={form.deadline}
+              onChange={handleChange}
+              className="input"
+            />
           </div>
 
-          <button type="submit" disabled={loading} className="btn-primary w-full py-2.5 text-base">
+          <button
+            type="submit"
+            disabled={loading || categories.length === 0}
+            className="btn-primary w-full py-2.5 text-base"
+          >
             {loading ? 'Posting...' : 'Post Bounty'}
           </button>
         </form>
