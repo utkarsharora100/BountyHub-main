@@ -58,7 +58,7 @@ BountyHub-main/
 │       │   ├── submissionService.js
 │       │   ├── searchService.js      # Redis ZSET autocomplete (zrevrange all + JS prefix filter)
 │       │   ├── commentService.js
-│       │   └── userService.js
+│       │   └── userService.js        # Profile, reputation history, leaderboard, getActivity (created bounties + bids placed)
 │       ├── workers/
 │       │   ├── syncWorker.js        # Redis stream consumer → PG replica read → MongoDB upsert
 │       │   └── lifecycleWorker.js   # Runs every 60s, cancels expired OPEN bounties

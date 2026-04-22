@@ -474,6 +474,8 @@ Two safeguards are in place:
 - `bountyRepository.findById()` — single bounty page
 - `bountyRepository.search()` — ILIKE fallback when MongoDB is empty
 - `bountyRepository.getTrending()` — trending list cache misses
+- `bountyRepository.findByCreator(userId, skip, take)` — user profile activity: bounties this user created
+- `bidRepository.findByBidder(userId, skip, take)` — user profile activity: bids this user placed
 - Sync Worker: `fetchBounty()` — reads the full row before writing to MongoDB
 
 ### Why writes go to primary only

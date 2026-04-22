@@ -11,5 +11,6 @@ router.get('/universities', userController.getUniversities);
 router.get('/:id', userController.getProfile);
 router.put('/profile', authenticate, userController.updateProfile);
 router.get('/:id/reputation', userController.getReputationHistory);
+router.get('/:id/activity', userController.getActivity);
 
 module.exports = router;

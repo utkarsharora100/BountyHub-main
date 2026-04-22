@@ -176,6 +176,7 @@ docker exec -it bounty-postgres-master psql -U postgres -d bounty_platform
 | Cache warmer (pre-populates on startup) | Built | `server/src/utils/cacheWarmer.js` |
 | Lifecycle worker (expires OPEN bounties) | Built | `server/src/workers/lifecycleWorker.js` |
 | Transaction + Discovery co-located in `server/` | Current state | Separated logically by service/repository layer |
+| User activity endpoint `GET /api/users/:id/activity` | Built | `bountyRepository.findByCreator` + `bidRepository.findByBidder` (parallel `prismaRead` queries) |
 
 ## Known Architectural Gaps
 

@@ -93,6 +93,22 @@ const bountyRepository = {
     return rows.map((r) => r.title.toLowerCase());
   },
 
+  async findByCreator(userId, skip, take) {
+    const [bounties, total] = await Promise.all([
+      prismaRead.bounty.findMany({
+        where: { createdBy: userId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: {
+          _count: { select: { bids: true, submissions: true } },
+        },
+      }),
+      prismaRead.bounty.count({ where: { createdBy: userId } }),
+    ]);
+    return { bounties, total };
+  },
+
   // Trending bounties (highest reward, open, recent)
   async getTrending(limit = 10) {
     return prismaRead.bounty.findMany({

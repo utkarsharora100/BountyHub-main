@@ -120,6 +120,8 @@ BountyHub has five independently deployable concerns. Each maps to a distinct su
 **API contract (must not break):**
 - Write endpoints: `POST /api/bounties`, `POST /api/bids`, `POST /api/submissions`
 - Read endpoints: `GET /api/search?universityId=&q=&page=`, `GET /api/bounties`, `GET /api/bounties/:id`
+- User endpoints: `GET /api/users/:id`, `GET /api/users/:id/reputation`, `GET /api/users/:id/activity`
+  - `/activity` returns `{ created[], createdTotal, bids[], bidsTotal, total }` — parallel PG replica reads, no MongoDB involved
 - Auth: `POST /api/auth/login`, `POST /api/auth/register`
 - 300ms debounce on all search inputs before firing API call
 

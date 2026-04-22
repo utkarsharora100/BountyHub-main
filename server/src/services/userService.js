@@ -1,5 +1,7 @@
 // ─── User Service ────────────────────────────────────────────
 const userRepository = require('../repositories/userRepository');
+const bountyRepository = require('../repositories/bountyRepository');
+const bidRepository = require('../repositories/bidRepository');
 const { cacheGet, cacheInvalidate } = require('../config/redis');
 const AppError = require('../utils/AppError');
 
@@ -33,6 +35,21 @@ const userService = {
   // Cache universities for 10 minutes — they basically never change after seed.
   async getUniversities() {
     return cacheGet('universities:all', () => userRepository.getAllUniversities(), 600);
+  },
+
+  async getActivity(userId, page, limit) {
+    const skip = (page - 1) * limit;
+    const [createdResult, bidsResult] = await Promise.all([
+      bountyRepository.findByCreator(userId, skip, limit),
+      bidRepository.findByBidder(userId, skip, limit),
+    ]);
+    return {
+      created: createdResult.bounties,
+      createdTotal: createdResult.total,
+      bids: bidsResult.bids,
+      bidsTotal: bidsResult.total,
+      total: createdResult.total + bidsResult.total,
+    };
   },
 };
 
