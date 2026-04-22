@@ -106,11 +106,13 @@ University (1) ──< User (1) ──< Bounty (1) ──< Bid
 
 | Key Pattern | Type | Written by | Read by |
 |---|---|---|---|
-| `bounties:list:*` | String (JSON) | bountyService | cacheGet |
-| `bounties:search:*` | String (JSON) | bountyService | cacheGet |
-| `trending:*` | String (JSON) | bountyService | cacheGet |
-| `bounty:events` | Stream | Transaction Service | Sync Worker |
-| `autocomplete:*` | Sorted Set (ZSET) | searchService | searchService ZRANGEBYLEX |
+| `bounties:list:*` | String (JSON) | bountyService | cacheGet (redisRead GET) |
+| `bounties:search:*` | String (JSON) | bountyService | cacheGet (redisRead GET) |
+| `trending:*` | String (JSON) | bountyService | cacheGet (redisRead GET) |
+| `autocomplete:*` | String (JSON) | searchService.getSuggestions | cacheGet (redisRead GET) |
+| `events:bounty` | Stream | publishEvent (bountyService) | Sync Worker XREADGROUP |
+| `search:suggestions` | Sorted Set (ZSET, scored by popularity) | cacheWarmer + addSearchSuggestion | getSuggestions ZREVRANGE |
+| `unmet:demand` | Sorted Set (ZSET, scored by search count) | searchService.trackUnmetDemand | searchService.getUnmetDemand |
 
 ---
 

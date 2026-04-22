@@ -39,5 +39,14 @@ BountyCatalogSchema.index({ title: 'text', description: 'text' });
 
 const BountyCatalog = mongo.model('BountyCatalog', BountyCatalogSchema);
 
+// Mongoose auto-index is async — the text index may not exist yet when the first
+// $text query arrives on a fresh collection. Explicitly sync after connection opens
+// so the index is guaranteed present before any query can reference it.
+mongo.once('open', () => {
+  BountyCatalog.ensureIndexes().catch((err) =>
+    console.error('[mongo] index sync error:', err.message)
+  );
+});
+
 // Document alias kept for backward compatibility with discoveryService import
 module.exports = { Document: BountyCatalog, BountyCatalog };

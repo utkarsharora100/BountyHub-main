@@ -56,7 +56,7 @@ BountyHub-main/
 │       │   ├── authService.js        # JWT issue + verify
 │       │   ├── bidService.js
 │       │   ├── submissionService.js
-│       │   ├── searchService.js      # Redis ZRANGEBYLEX autocomplete
+│       │   ├── searchService.js      # Redis ZSET autocomplete (zrevrange all + JS prefix filter)
 │       │   ├── commentService.js
 │       │   └── userService.js
 │       ├── workers/
@@ -86,7 +86,7 @@ BountyHub-main/
 
 ### Redis (Event Bus + Cache + Search Index)
 - **Master** on port `6369` — writes: `SETEX` cache, `XADD` stream events, `ZINCRBY` hot score
-- **Replica** on port `6380` — reads: `GET` cache (via `cacheGet`), `ZRANGEBYLEX` autocomplete
+- **Replica** on port `6380` — reads: `GET` cache (via `cacheGet`), `ZREVRANGE` for autocomplete term fetch
 - Streams & Consumer Groups: Sync Worker subscribes with a consumer group of 50 workers
 - TTL cache: bounty list (600s), search results (600s), trending (600s), autocomplete (600s)
 - Cache invalidation fires on every write (`cacheInvalidate('bounties:*')`), so 600s is safe
@@ -120,7 +120,7 @@ BountyHub-main/
 6. Client GET → Nginx → Discovery Service
 7. Redis cache checked first (`cacheGet` via replica)
 8. Cache miss → MongoDB `Document.find()` with `secondaryPreferred`
-9. Autocomplete → Redis `ZRANGEBYLEX` on sorted set
+9. Autocomplete → Redis `ZREVRANGE` all terms + JS prefix filter, result cached 600s
 
 ---
 
@@ -135,7 +135,7 @@ BountyHub-main/
 | `server/src/config/Document.js` | MongoDB denormalized document schema |
 | `server/src/services/bountyService.js` | Write path for bounties |
 | `server/src/services/discoveryService.js` | Read path — MongoDB full-text search |
-| `server/src/services/searchService.js` | Redis autocomplete (ZRANGEBYLEX) |
+| `server/src/services/searchService.js` | Redis autocomplete — `zrevrange` all terms + JS prefix filter + 600s result cache |
 | `docker-compose.yml` | All infrastructure — start everything here |
 | `docs/architecture.md` | Full request lifecycle, latency breakdown, data flow diagrams |
 | `docs/directive.md` | Non-negotiable coding rules with rationale |

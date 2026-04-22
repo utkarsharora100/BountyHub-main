@@ -7,43 +7,49 @@ const discoveryService = {
   async search(query, skip = 0, limit = 10) {
     if (!BountyCatalog) return null;
 
-    const criteria = { status: { $ne: 'CANCELLED' } };
-    if (query && query.trim()) {
-      criteria.$text = { $search: query.trim() };
+    try {
+      const criteria = { status: { $ne: 'CANCELLED' } };
+      if (query && query.trim()) {
+        criteria.$text = { $search: query.trim() };
+      }
+
+      const [docs, total] = await Promise.all([
+        BountyCatalog.find(criteria)
+          .read('secondaryPreferred')
+          .skip(skip)
+          .limit(limit)
+          .sort(query ? { score: { $meta: 'textScore' } } : { createdAt: -1 })
+          .exec(),
+        BountyCatalog.countDocuments(criteria).read('secondaryPreferred'),
+      ]);
+
+      const bounties = docs.map((d) => ({
+        id: d.bounty_id,
+        title: d.title,
+        description: d.description,
+        category: d.category,
+        status: d.status,
+        rewardPoints: d.reward_points,
+        createdAt: d.createdAt,
+        deadline: d.deadline,
+        createdBy: d.creator?.id,
+        creator: d.creator
+          ? {
+              id: d.creator.id,
+              name: d.creator.name,
+              avatarUrl: null,
+              university: d.creator.university ? { name: d.creator.university } : null,
+            }
+          : null,
+        _count: { bids: d.bid_count || 0, submissions: d.submission_count || 0 },
+      }));
+
+      return { bounties, total };
+    } catch {
+      // text index not yet built (fresh collection) or MongoDB unavailable —
+      // return null so bountyService falls back to PostgreSQL
+      return null;
     }
-
-    const [docs, total] = await Promise.all([
-      BountyCatalog.find(criteria)
-        .read('secondaryPreferred')
-        .skip(skip)
-        .limit(limit)
-        .sort(query ? { score: { $meta: 'textScore' } } : { createdAt: -1 })
-        .exec(),
-      BountyCatalog.countDocuments(criteria).read('secondaryPreferred'),
-    ]);
-
-    const bounties = docs.map((d) => ({
-      id: d.bounty_id,
-      title: d.title,
-      description: d.description,
-      category: d.category,
-      status: d.status,
-      rewardPoints: d.reward_points,
-      createdAt: d.createdAt,
-      deadline: d.deadline,
-      createdBy: d.creator?.id,
-      creator: d.creator
-        ? {
-            id: d.creator.id,
-            name: d.creator.name,
-            avatarUrl: null,
-            university: d.creator.university ? { name: d.creator.university } : null,
-          }
-        : null,
-      _count: { bids: d.bid_count || 0, submissions: d.submission_count || 0 },
-    }));
-
-    return { bounties, total };
   },
 
   // Including university_id (the shard key) guarantees targeted routing —

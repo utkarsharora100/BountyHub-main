@@ -12,7 +12,7 @@ const searchService = {
         .zincrby('search:suggestions', 1, normalized)
         // NX: only add to search:terms if not already present (score stays 0 for ZRANGEBYLEX)
         .zadd('search:terms', 'NX', 0, normalized)
-        // Trim: keep only the top 1000 scored suggestions (ZREMRANGEBYRANK is safe when set is smaller)
+        // Trim: keep only the top 1000 scored suggestions
         .zremrangebyrank('search:suggestions', 0, -1001)
         .exec();
     } catch {
@@ -32,10 +32,12 @@ const searchService = {
 
       if (results.length > 0) return results;
 
-      // Fallback: lightweight title-only lookup.
-      return bountyRepository.searchTitles(prefix, 8);
+      // Fallback: search:terms not yet seeded — query PostgreSQL
+      const { bounties } = await bountyRepository.search(prefix, 0, 8);
+      return bounties.map((b) => b.title.toLowerCase());
     }, 600);
   },
+
   // Track search queries that returned zero results — useful for demand analytics
   async trackUnmetDemand(query) {
     if (!redis || !query || query.trim().length < 2) return;
