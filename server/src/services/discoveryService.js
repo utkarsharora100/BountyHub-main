@@ -10,7 +10,11 @@ const discoveryService = {
     try {
       const criteria = { status: { $ne: 'CANCELLED' } };
       if (query && query.trim()) {
-        criteria.$text = { $search: query.trim() };
+        // By default MongoDB $text treats multi-word queries as OR ("machine learning"
+        // returns docs with either word).  Wrapping each word in double-quotes makes
+        // every word required (AND semantics) without disabling stemming entirely.
+        const mandatoryQuery = query.trim().split(/\s+/).map(w => `"${w}"`).join(' ');
+        criteria.$text = { $search: mandatoryQuery };
       }
 
       const [docs, total] = await Promise.all([

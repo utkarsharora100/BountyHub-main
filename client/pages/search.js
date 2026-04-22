@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/router';
 import api from '../lib/api';
 import BountyCard from '../components/BountyCard';
 import Pagination from '../components/Pagination';
 import { Search as SearchIcon, X } from 'lucide-react';
 
 export default function SearchPage() {
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
@@ -14,8 +16,24 @@ export default function SearchPage() {
   const inputRef = useRef();
   const debounceRef = useRef();
   const containerRef = useRef();
+  // Guard so the URL-restore effect only fires once on initial mount
+  const hasInitialized = useRef(false);
 
-  // Fix 3: Close suggestions when clicking outside the search container
+  // Restore search state from URL on initial load (handles back-navigation)
+  useEffect(() => {
+    if (!router.isReady || hasInitialized.current) return;
+    hasInitialized.current = true;
+    const q = typeof router.query.q === 'string' ? router.query.q : '';
+    const p = parseInt(router.query.page) || 1;
+    if (q) {
+      setQuery(q);
+      setPage(p);
+      doSearch(q, p);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady]);
+
+  // Close suggestions when clicking outside the search container
   useEffect(() => {
     function handleClickOutside(e) {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
@@ -47,7 +65,13 @@ export default function SearchPage() {
 
   async function doSearch(searchQuery, searchPage = 1) {
     if (!searchQuery || searchQuery.length < 2) return;
-    // Fix 1: Clear stale results immediately so old count/pagination don't show with new query
+    // Persist search in URL so back-navigation restores the results
+    router.replace(
+      { pathname: '/search', query: { q: searchQuery, ...(searchPage > 1 && { page: searchPage }) } },
+      undefined,
+      { shallow: true }
+    );
+    // Clear stale results immediately so old count/pagination don't flash with new query
     setResults(null);
     setLoading(true);
     setShowSuggestions(false);
@@ -92,7 +116,6 @@ export default function SearchPage() {
       </div>
 
       {/* Search input with autocomplete dropdown */}
-      {/* Fix 3: containerRef attached here so click-outside detection works */}
       <div ref={containerRef} className="py-4 border-b border-gray-200 dark:border-gray-800">
         <form onSubmit={handleSubmit} className="relative">
           <div className="relative">
@@ -102,7 +125,7 @@ export default function SearchPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-              // Fix 5: close suggestions on blur (150ms delay lets suggestion onClick fire first)
+              // 150ms delay lets the suggestion onClick fire before the blur closes the dropdown
               onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
               className="input pl-10 pr-10 py-2.5"
               placeholder="Search bounties... (e.g., machine learning, API, React)"
@@ -171,7 +194,6 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* Fix 2: Hide pagination while loading — old controls caused wrong page navigation */}
       {!loading && results?.pagination && (
         <div className="pt-4">
           <Pagination pagination={results.pagination} onPageChange={handlePageChange} />

@@ -87,7 +87,7 @@ const bountyService = {
   async search(query, page = 1, limit = 10) {
     if (!query || query.trim().length < 2) throw new AppError('Search query too short', 400);
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const cacheKey = `bounties:search:${query}:${page}:${limit}`;
+    const cacheKey = `bounties:search:${encodeURIComponent(query.trim())}:${page}:${limit}`;
     return cacheGet(cacheKey, async () => {
       const mongoResult = await discoveryService.search(query, skip, parseInt(limit));
       if (mongoResult && mongoResult.total > 0) return mongoResult;
