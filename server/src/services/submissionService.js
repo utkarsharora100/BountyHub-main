@@ -4,6 +4,16 @@ const { Prisma } = require('@prisma/client');
 const { cacheInvalidate, publishEvent } = require('../config/redis');
 const AppError = require('../utils/AppError');
 
+function assertBountyAcceptsSubmission(bounty) {
+  if (!bounty) throw new AppError('Bounty not found', 404);
+  if (bounty.status === 'COMPLETED' || bounty.status === 'CANCELLED') {
+    throw new AppError('Bounty is closed', 400);
+  }
+  if (bounty.deadline && new Date(bounty.deadline) <= new Date()) {
+    throw new AppError('Bounty deadline has passed', 400);
+  }
+}
+
 const submissionService = {
   async submitWork(userId, bountyId, data) {
     const bounty = await prismaRead.bounty.findUnique({ where: { id: bountyId } });
@@ -20,6 +30,10 @@ const submissionService = {
         description: data.description || null,
       },
     });
+    await cacheInvalidate('bounties:*');
+    await cacheInvalidate('trending:*');
+    await publishBountyEvent('bounty.upserted', bountyId, { reason: 'submission.created' });
+    return submission;
   },
 
   async reviewSubmission(userId, submissionId, status) {

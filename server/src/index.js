@@ -9,6 +9,8 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const routes = require('./routes');
 const errorHandler = require('./middleware/errorHandler');
+const { rebuildReadModels, startCatalogSyncWorker } = require('./services/catalogSyncService');
+const { startLifecycleWorker } = require('./services/lifecycleService');
 
 const app = express();
 

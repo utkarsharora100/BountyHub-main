@@ -15,6 +15,28 @@ const bountyRepository = {
     return prisma.bounty.delete({ where: { id } });
   },
 
+  async expireOpenBefore(now) {
+    const expired = await prisma.bounty.findMany({
+      where: { status: 'OPEN', deadline: { lt: now } },
+      select: { id: true },
+    });
+    const ids = expired.map((bounty) => bounty.id);
+    if (ids.length === 0) return { count: 0, ids: [] };
+
+    await prisma.$transaction([
+      prisma.bounty.updateMany({
+        where: { id: { in: ids }, status: 'OPEN' },
+        data: { status: 'CANCELLED' },
+      }),
+      prisma.bid.updateMany({
+        where: { bountyId: { in: ids }, status: 'PENDING' },
+        data: { status: 'REJECTED' },
+      }),
+    ]);
+
+    return { count: ids.length, ids };
+  },
+
   // ── READ (replica) ─────────────────────────────────────────
   async existsById(id) {
     const row = await prismaRead.bounty.findUnique({ where: { id }, select: { id: true } });
@@ -27,6 +49,62 @@ const bountyRepository = {
       include: {
         creator: {
           select: { id: true, name: true, avatarUrl: true, reputation: true, universityId: true, university: { select: { name: true } } },
+        },
+        _count: { select: { bids: true, submissions: true, comments: true } },
+      },
+    });
+  },
+
+  async findByIdForIndex(id) {
+    return prisma.bounty.findUnique({
+      where: { id },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            reputation: true,
+            university: { select: { name: true, country: true } },
+          },
+        },
+        _count: { select: { bids: true, submissions: true, comments: true } },
+      },
+    });
+  },
+
+  async findIndexableForSearch() {
+    return prismaRead.bounty.findMany({
+      where: {
+        status: 'OPEN',
+        OR: [{ deadline: null }, { deadline: { gt: new Date() } }],
+      },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            reputation: true,
+            university: { select: { name: true, country: true } },
+          },
+        },
+        _count: { select: { bids: true, submissions: true, comments: true } },
+      },
+    });
+  },
+
+  async findSearchResultsByIds(ids) {
+    if (!ids.length) return [];
+    return prismaRead.bounty.findMany({
+      where: {
+        id: { in: ids },
+        status: 'OPEN',
+        OR: [{ deadline: null }, { deadline: { gt: new Date() } }],
+      },
+      include: {
+        creator: {
+          select: { id: true, name: true, avatarUrl: true, university: { select: { name: true } } },
         },
         _count: { select: { bids: true, submissions: true, comments: true } },
       },
@@ -52,7 +130,7 @@ const bountyRepository = {
     return { bounties, total };
   },
 
-  // Full-text search using PostgreSQL
+  // Search fallback using PostgreSQL when Redis is unavailable.
   async search(query, skip, take) {
     const where = {
       status: { notIn: ['CANCELLED'] },

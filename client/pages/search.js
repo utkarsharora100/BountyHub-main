@@ -7,9 +7,9 @@ import { Search as SearchIcon, X } from 'lucide-react';
 export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(null);
-  const [suggestions, setSuggestions] = useState([]);
+  const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [matching, setMatching] = useState(false);
   const [page, setPage] = useState(1);
   const inputRef = useRef();
   const debounceRef = useRef();
@@ -29,17 +29,20 @@ export default function SearchPage() {
   // Debounce autocomplete so we're not hitting the API on every keystroke
   useEffect(() => {
     if (query.length < 2) {
-      setSuggestions([]);
+      setMatches([]);
+      setMatching(false);
       return;
     }
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      setMatching(true);
       try {
-        const data = await api.get(`/search/suggestions?q=${encodeURIComponent(query)}`);
-        setSuggestions(data);
-        setShowSuggestions(true);
+        const data = await api.get(`/search/matches?q=${encodeURIComponent(query)}&limit=9`);
+        setMatches(data);
       } catch {
-        setSuggestions([]);
+        setMatches([]);
+      } finally {
+        setMatching(false);
       }
     }, 300);
     return () => clearTimeout(debounceRef.current);
@@ -50,7 +53,6 @@ export default function SearchPage() {
     // Fix 1: Clear stale results immediately so old count/pagination don't show with new query
     setResults(null);
     setLoading(true);
-    setShowSuggestions(false);
     try {
       const data = await api.get(
         `/bounties/search?q=${encodeURIComponent(searchQuery)}&page=${searchPage}&limit=15`
@@ -69,17 +71,23 @@ export default function SearchPage() {
     doSearch(query, 1);
   };
 
-  const handleSuggestionClick = (s) => {
-    setQuery(s);
-    setShowSuggestions(false);
-    setPage(1);
-    doSearch(s, 1);
-  };
-
   const handlePageChange = (p) => {
     setPage(p);
     doSearch(query, p);
     window.scrollTo(0, 0);
+  };
+
+  const handleQueryChange = (e) => {
+    setQuery(e.target.value);
+    setResults(null);
+    setPage(1);
+  };
+
+  const clearSearch = () => {
+    setQuery('');
+    setResults(null);
+    setMatches([]);
+    setMatching(false);
   };
 
   return (

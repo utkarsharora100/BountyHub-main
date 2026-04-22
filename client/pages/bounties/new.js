@@ -140,6 +140,17 @@ export default function NewBounty() {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Department (optional)</label>
+              <input name="department" value={form.department} onChange={handleChange} className="input" placeholder="e.g., Computer Science" maxLength={150} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Skills (optional)</label>
+              <input name="skills" value={form.skills} onChange={handleChange} className="input" placeholder="Python, Data Science, React" />
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium mb-1">Deadline (optional)</label>
             <input

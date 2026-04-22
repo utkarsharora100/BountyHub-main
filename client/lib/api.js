@@ -24,7 +24,10 @@ async function request(endpoint, options = {}) {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new ApiError(data.error || 'Something went wrong', res.status);
+    const details = Array.isArray(data.details) && data.details.length
+      ? `: ${data.details.join(', ')}`
+      : '';
+    throw new ApiError(`${data.error || 'Something went wrong'}${details}`, res.status);
   }
 
   return data;

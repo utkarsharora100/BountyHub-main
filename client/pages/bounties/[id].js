@@ -42,6 +42,7 @@ export default function BountyDetail() {
   const [bidModal, setBidModal] = useState(false);
   const [submitModal, setSubmitModal] = useState(false);
   const [bidMessage, setBidMessage] = useState('');
+  const [bidAmount, setBidAmount] = useState('');
   const [subLink, setSubLink] = useState('');
   const [subDesc, setSubDesc] = useState('');
   const [commentText, setCommentText] = useState('');
@@ -76,10 +77,11 @@ export default function BountyDetail() {
   async function handlePlaceBid(e) {
     e.preventDefault();
     try {
-      await api.post(`/bounties/${id}/bids`, { message: bidMessage });
+      await api.post(`/bounties/${id}/bids`, { message: bidMessage, amount: bidAmount || undefined });
       toast.success('Bid placed!');
       setBidModal(false);
       setBidMessage('');
+      setBidAmount('');
       loadAll();
     } catch (err) {
       toast.error(err.message);
@@ -443,6 +445,10 @@ export default function BountyDetail() {
               placeholder="Why are you a good fit? What's your approach?"
               required
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Proposed Points (optional)</label>
+            <input type="number" min="1" max={bounty.rewardPoints} value={bidAmount} onChange={(e) => setBidAmount(e.target.value)} className="input" placeholder={`${bounty.rewardPoints} max`} />
           </div>
           <button type="submit" className="btn-primary w-full">Submit Bid</button>
         </form>
