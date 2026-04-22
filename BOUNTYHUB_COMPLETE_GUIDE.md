@@ -1,9 +1,8 @@
 # BountyHub — Complete Project Guide & Learning Roadmap
 
-> **Purpose:** Deep analysis of the existing BountyHub codebase + a complete roadmap to build an improved, production-grade version, with full explanations of every concept you need to learn along the way.
 
 ---
-
+S
 ## Table of Contents
 
 1. [What BountyHub Is](#1-what-bountyhub-is)
