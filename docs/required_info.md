@@ -164,11 +164,19 @@ docker exec -it bounty-postgres-master psql -U postgres -d bounty_platform
 
 ---
 
-## What Does NOT Exist Yet (Planned)
+## What Is Built
 
-- `server/src/workers/syncWorker.js` — Sync Worker process (Redis stream consumer → MongoDB upsert)
-- Nginx config file — load balancer config for Transaction vs Discovery routing
-- Separate Transaction Service and Discovery Service processes — currently co-located in `server/`
-- Horizontal scaling config for 5 Transaction + 10 Discovery nodes
+| Component | Status | File |
+|---|---|---|
+| Sync Worker (Redis stream → MongoDB) | Built | `server/src/workers/syncWorker.js` |
+| Nginx load balancer config | Built | `nginx/nginx.conf` |
+| Redis master/replica split with `enableOfflineQueue: false` | Built | `server/src/config/redis.js` |
+| Cache warmer (pre-populates on startup) | Built | `server/src/utils/cacheWarmer.js` |
+| Lifecycle worker (expires OPEN bounties) | Built | `server/src/workers/lifecycleWorker.js` |
+| Transaction + Discovery co-located in `server/` | Current state | Separated logically by service/repository layer |
 
-These are the primary implementation targets for the next development phase.
+## Known Architectural Gaps
+
+- Transaction Service and Discovery Service are co-located in a single Express process — not yet split into independently deployable nodes
+- Horizontal scaling (5 Transaction + 10 Discovery) requires extracting them into separate Docker services
+- MongoDB sharding with `mongos` router is configured in compose but not enforced at the query layer beyond `university_id` filters
