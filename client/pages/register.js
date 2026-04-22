@@ -1,69 +1,32 @@
-import { useState, useEffect, useRef } from 'react';
+// ─── Register Page ───────────────────────────────────────────
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import { UserPlus } from 'lucide-react';
+import api from '../lib/api';
 
 export default function Register() {
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'STUDENT' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', universityId: '' });
   const [loading, setLoading] = useState(false);
-
-  // University Autocomplete State
-  const [uniQuery, setUniQuery] = useState('');
-  const [selectedUni, setSelectedUni] = useState(null);
-  const [suggestions, setSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const debounceRef = useRef();
-
+  const [universities, setUniversities] = useState([]);
   const { register } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    let isMounted = true;
-    if (uniQuery.length < 3 || selectedUni?.name === uniQuery) {
-      setSuggestions([]);
-      return;
-    }
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`http://universities.hipolabs.com/search?name=${encodeURIComponent(uniQuery)}`);
-        if (!res.ok) throw new Error('API Error');
-        const data = await res.json();
-        if (!isMounted) return;
-        if (!Array.isArray(data)) throw new Error('Invalid format');
-        // Deduplicate identical names from the API and limit to 20
-        const uniqueData = Array.from(new Map(data.map(item => [item.name, item])).values()).slice(0, 20);
-        setSuggestions(uniqueData);
-        setShowSuggestions(true);
-      } catch (err) {
-        if (isMounted) setSuggestions([]);
-      }
-    }, 400);
-    return () => {
-      isMounted = false;
-      clearTimeout(debounceRef.current);
-    };
-  }, [uniQuery, selectedUni]);
+    api.get('/universities')
+      .then(setUniversities)
+      .catch(() => setUniversities([]));
+  }, []);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedUni) {
-      return toast.error('Please select a university from the suggestions dropdown.');
-    }
-    if (selectedUni.name === 'Other (Not Listed)' && !selectedUni.customName) {
-      return toast.error('Please enter your university name.');
-    }
     setLoading(true);
     try {
-      await register({
-        ...form,
-        universityName: selectedUni.name === 'Other (Not Listed)' ? selectedUni.customName : selectedUni.name,
-        universityCountry: selectedUni.country || 'Unknown'
-      });
+      await register({ ...form, universityId: parseInt(form.universityId) });
       toast.success('Account created!');
       router.push('/');
     } catch (err) {
@@ -85,119 +48,26 @@ export default function Register() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Full Name</label>
-            <input
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              className="input"
-              placeholder="Your name"
-              required
-            />
+            <input name="name" value={form.name} onChange={handleChange} className="input" placeholder="John Doe" required />
           </div>
-
           <div>
             <label className="block text-sm font-medium mb-1">Email</label>
-            <input
-              name="email"
-              type="email"
-              value={form.email}
-              onChange={handleChange}
-              className="input"
-              placeholder="you@university.edu"
-              required
-            />
+            <input name="email" type="email" value={form.email} onChange={handleChange} className="input" placeholder="you@university.edu" required />
           </div>
-
           <div>
             <label className="block text-sm font-medium mb-1">Password</label>
-            <input
-              name="password"
-              type="password"
-              value={form.password}
-              onChange={handleChange}
-              className="input"
-              placeholder="Min 6 characters"
-              required
-              minLength={6}
-            />
+            <input name="password" type="password" value={form.password} onChange={handleChange} className="input" placeholder="Min 6 characters" required minLength={6} />
           </div>
-
           <div>
             <label className="block text-sm font-medium mb-1">University</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={uniQuery}
-                onChange={(e) => {
-                  setUniQuery(e.target.value);
-                  setSelectedUni(null);
-                }}
-                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-              onBlur={() => setShowSuggestions(false)}
-                className="input w-full"
-                placeholder="Search your university..."
-                required
-              />
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-                  {suggestions.map((u, i) => (
-                    <div
-                      key={i}
-                    onMouseDown={(e) => {
-                      e.preventDefault(); // Prevents the input's onBlur from hiding this before the click registers
-                        setSelectedUni(u);
-                        setUniQuery(u.name);
-                        setShowSuggestions(false);
-                      }}
-                      className="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-                    >
-                      <div className="font-medium text-gray-900 dark:text-gray-100">{u.name}</div>
-                      <div className="text-xs text-gray-500">{u.country}</div>
-                    </div>
-                  ))}
-                <div
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setSelectedUni({ name: 'Other (Not Listed)', country: 'Other' });
-                    setUniQuery('Other (Not Listed)');
-                    setShowSuggestions(false);
-                  }}
-                  className="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-t border-gray-200 dark:border-gray-700"
-                >
-                  <div className="font-medium text-gray-900 dark:text-gray-100">Other (Not Listed)</div>
-                  <div className="text-xs text-gray-500">Type your university name manually</div>
-                </div>
-                </div>
-              )}
-            </div>
-          {selectedUni?.name === 'Other (Not Listed)' && (
-            <div className="mt-3 animate-fade-in">
-              <input
-                type="text"
-                className="input w-full border-primary-500 ring-1 ring-primary-500"
-                placeholder="Enter your university name..."
-                onChange={(e) => setSelectedUni({ ...selectedUni, customName: e.target.value })}
-                required
-              />
-            </div>
-          )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">I am a</label>
-            <select
-              name="role"
-              value={form.role}
-              onChange={handleChange}
-              className="input"
-              required
-            >
-              <option value="STUDENT">Student</option>
-              <option value="STAFF">University Staff</option>
+            <select name="universityId" value={form.universityId} onChange={handleChange} className="input" required>
+              <option value="">Select university...</option>
+              {universities.map((u) => (
+                <option key={u.id} value={u.id}>{u.name}{u.country ? `, ${u.country}` : ''}</option>
+              ))}
             </select>
           </div>
-
-          <button type="submit" disabled={loading || !selectedUni} className="btn-primary w-full py-2.5">
+          <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
             {loading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>

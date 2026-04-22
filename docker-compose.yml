@@ -1,5 +1,5 @@
 # ─── Docker Compose: Full Stack ───────────────────────────────
-# Spins up PostgreSQL (master + read replica), Redis, MongoDB (primary + replica), API server, and client
+# Spins up PostgreSQL (master + read replica), Redis, API server, and client
 
 x-server-env: &server-env
   DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
@@ -39,7 +39,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── PostgreSQL Read Replica ────────────────────────────────
+  # ── PostgreSQL Read Replica ──────────────────────────────────
   postgres-replica:
     image: bitnamilegacy/postgresql:16
     container_name: bounty-postgres-replica
@@ -49,6 +49,7 @@ services:
       POSTGRESQL_REPLICATION_PASSWORD: repl_password
       POSTGRESQL_MASTER_HOST: postgres-master
       POSTGRESQL_MASTER_PORT_NUMBER: 5432
+      # The missing variable required for Bitnami replica initialization
       POSTGRESQL_PASSWORD: postgres123
     ports:
       - "5433:5432"
@@ -57,7 +58,7 @@ services:
     depends_on:
       postgres-master:
         condition: service_healthy
-    healthcheck:
+    healthcheck: 
       test: ["CMD-SHELL", "pg_isready -U postgres -d bounty_platform"]
       interval: 5s
       timeout: 5s
@@ -68,6 +69,7 @@ services:
     image: redis:7-alpine
     container_name: bounty-redis
     ports:
+      # Maps host 6369 to container internal 6379
       - "6369:6379"
     volumes:
       - redis_master:/data
@@ -77,53 +79,26 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── MongoDB Primary ────────────────────────────────────────
-  mongo-primary:
-    image: bitnami/mongodb
-    container_name: bounty-mongo-primary
-    environment:
-      MONGODB_REPLICA_SET_MODE: primary
-      MONGODB_REPLICA_SET_NAME: rs0
-      MONGODB_REPLICA_SET_KEY: replicasetkey123
-      MONGODB_ROOT_PASSWORD: root
-      MONGODB_DATABASE: bounty_platform
-      MONGODB_USERNAME: utkarsh
-      MONGODB_PASSWORD: "123456"
-      MONGODB_ADVERTISED_HOSTNAME: mongo-primary
+  # ── Redis Replica ──────────────────────────────────────────
+  redis-replica:
+    image: redis:7-alpine
+    container_name: bounty-redis-replica
     ports:
-      - "27017:27017"
+      # Maps host 6380 to container internal 6379
+      - "6380:6379"
     volumes:
-      - mongodb_primary_data:/bitnami/mongodb
-    healthcheck:
-      test: ["CMD", "mongosh", "-u", "root", "-p", "root", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ── MongoDB Replica ────────────────────────────────────────
-  mongo-replica:
-    image: bitnami/mongodb
-    container_name: bounty-mongo-replica
-    environment:
-      MONGODB_REPLICA_SET_MODE: secondary
-      MONGODB_REPLICA_SET_NAME: rs0
-      MONGODB_REPLICA_SET_KEY: replicasetkey123
-      MONGODB_PRIMARY_HOST: mongo-primary
-      MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD: root
-      MONGODB_ADVERTISED_HOSTNAME: mongo-replica
-    ports:
-      - "27018:27017"
-    volumes:
-      - mongodb_replica_data:/bitnami/mongodb
+      - redis_replica:/data
+    # Replicates from the master's internal container port
+    command: redis-server --replicaof redis-master 6379
     depends_on:
-      mongo-primary:
+      redis-master:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "mongosh", "-u", "root", "-p", "root", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
       timeout: 5s
       retries: 5
-
+  
   # ── Backend API Server ─────────────────────────────────────
   # MongoDB Catalog Read Model
   mongo-catalog:
@@ -143,22 +118,9 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
-    container_name: bounty-server
-    ports:
-      - "5001:5000"
+    command: sh -c "npx prisma db push --skip-generate && node scripts/wait-for-read-model.js && node prisma/seed.js && node scripts/wait-for-read-model.js --seeded"
     environment:
-      DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
-      DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
-      REDIS_URL: "redis://redis-master:6379"
-      # Single replica set URI — driver handles primary writes & secondary reads automatically.
-      # readPreference=secondaryPreferred routes reads to the replica when available.
-      # authSource must match the database where the app user (utkarsh) was created.
-      MONGODB_URL: "mongodb://utkarsh:123456@mongo-primary:27017,mongo-replica:27017/bounty_platform?replicaSet=rs0&readPreference=secondaryPreferred&authSource=bounty_platform"
-      JWT_SECRET: "docker-jwt-secret-change-in-production"
-      JWT_EXPIRES_IN: "7d"
-      PORT: 5000
-      NODE_ENV: development
-      CLIENT_URL: "http://localhost:3000"
+      <<: *server-env
     depends_on:
       postgres-master:
         condition: service_healthy
@@ -183,9 +145,7 @@ services:
         condition: service_completed_successfully
       redis-master:
         condition: service_healthy
-      mongo-primary:
-        condition: service_healthy
-      mongo-replica:
+      redis-replica:
         condition: service_healthy
       mongo-catalog:
         condition: service_healthy
@@ -225,70 +185,21 @@ services:
     depends_on:
       - server
 
-  # ── Nginx Edge Proxy ───────────────────────────────────────
-  # Exposes the full stack on http://localhost:8080
-  # Routes /api/* → server:5000, everything else → client:3000
-  nginx:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
-    container_name: bounty-nginx
+  # Local Edge / Reverse Proxy
+  edge:
+    image: nginx:1.27-alpine
+    container_name: bounty-edge
     ports:
       - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - server
       - client
-    restart: unless-stopped
-
-  # ── DB Init ────────────────────────────────────────────────
-  # One-shot container: pushes Prisma schema and seeds data, then exits.
-  # Re-running docker compose up is safe — prisma db push is idempotent.
-  db-init:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-    container_name: bounty-db-init
-    command: sh -c "npx prisma db push --accept-data-loss --skip-generate && node prisma/seed.js"
-    environment:
-      DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
-      DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
-      REDIS_URL: "redis://redis-master:6379"
-      MONGODB_URL: "mongodb://utkarsh:123456@mongo-primary:27017,mongo-replica:27017/bounty_platform?replicaSet=rs0&readPreference=secondaryPreferred&authSource=bounty_platform"
-      JWT_SECRET: "docker-jwt-secret-change-in-production"
-      NODE_ENV: development
-    depends_on:
-      postgres-master:
-        condition: service_healthy
-    restart: "no"
-
-  # ── Catalog Sync Worker ────────────────────────────────────
-  # Standalone Redis Stream consumer → MongoDB upsert pipeline.
-  # Runs syncWorker.js only (WORKER_ONLY=true suppresses in-server start).
-  catalog-sync-worker:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.worker
-    container_name: bounty-sync-worker
-    environment:
-      DATABASE_URL: "postgresql://postgres:postgres123@postgres-master:5432/bounty_platform"
-      DATABASE_READ_URL: "postgresql://postgres:postgres123@postgres-replica:5432/bounty_platform"
-      REDIS_URL: "redis://redis-master:6379"
-      MONGODB_URL: "mongodb://utkarsh:123456@mongo-primary:27017,mongo-replica:27017/bounty_platform?replicaSet=rs0&readPreference=secondaryPreferred&authSource=bounty_platform"
-      JWT_SECRET: "docker-jwt-secret-change-in-production"
-      NODE_ENV: production
-      WORKER_ONLY: "true"
-    depends_on:
-      postgres-replica:
-        condition: service_healthy
-      redis-master:
-        condition: service_healthy
-      mongo-primary:
-        condition: service_healthy
-    restart: unless-stopped
+      - server
 
 volumes:
   pgdata-master:
   pgdata-replica:
   redis_master:
-  mongodb_primary_data:
-  mongodb_replica_data:
+  redis_replica:
+  mongo_catalog:

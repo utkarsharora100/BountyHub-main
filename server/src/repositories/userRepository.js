@@ -4,8 +4,7 @@ const { prisma, prismaRead } = require('../config/database');
 const userRepository = {
   // WRITE operations → master
   async create(data) {
-    // Include university so callers don't need a second round-trip just to get the name.
-    return prisma.user.create({ data, include: { university: true } });
+    return prisma.user.create({ data });
   },
 
   async updateReputation(userId, points) {
@@ -21,8 +20,7 @@ const userRepository = {
 
   // READ operations → read replica
   async findByEmail(email) {
-    // Include university so the login response has the full profile — avoids a second fetch.
-    return prismaRead.user.findUnique({ where: { email }, include: { university: true } });
+    return prismaRead.user.findUnique({ where: { email } });
   },
 
   async findById(id) {
@@ -57,14 +55,6 @@ const userRepository = {
       prismaRead.reputationLog.count({ where: { userId } }),
     ]);
     return { logs, total };
-  },
-
-  // Universities don't change at runtime (seeded once), so read replica is fine here.
-  async getAllUniversities() {
-    return prismaRead.university.findMany({
-      orderBy: { name: 'asc' },
-      select: { id: true, name: true, country: true },
-    });
   },
 };
 

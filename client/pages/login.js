@@ -1,3 +1,4 @@
+// ─── Login Page ──────────────────────────────────────────────
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
@@ -38,25 +39,11 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="input"
-              placeholder="you@university.edu"
-              required
-            />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@university.edu" required />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="input"
-              placeholder="••••••••"
-              required
-            />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input" placeholder="••••••••" required />
           </div>
           <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
             {loading ? 'Signing in...' : 'Sign In'}
@@ -64,11 +51,13 @@ export default function Login() {
         </form>
 
         <p className="text-sm text-center text-gray-500 mt-4">
-          Don&apos;t have an account?{' '}
-          <Link href="/register" className="text-primary-600 dark:text-primary-400 hover:underline">
-            Sign up
-          </Link>
+          Don't have an account?{' '}
+          <Link href="/register" className="text-primary-600 dark:text-primary-400 hover:underline">Sign up</Link>
         </p>
+
+        <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs text-gray-500">
+          <strong>Demo:</strong> aarav@iitd.ac.in / pass123
+        </div>
       </div>
     </div>
   );

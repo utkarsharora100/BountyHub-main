@@ -14,9 +14,6 @@ const { startLifecycleWorker } = require('./services/lifecycleService');
 
 const app = express();
 
-// App runs behind Nginx in Docker; trust first proxy for client IP handling.
-app.set('trust proxy', 1);
-
 // ── Security Middleware ─────────────────────────────────────
 app.use(helmet());
 app.use(
@@ -34,9 +31,7 @@ const limiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
 });
-if (config.nodeEnv === 'production') {
-  app.use('/api', limiter);
-}
+app.use('/api', limiter);
 
 // ── Body Parsing ────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));
@@ -54,19 +49,17 @@ app.use(errorHandler);
 // ── Start Server ────────────────────────────────────────────
 app.listen(config.port, () => {
   logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
-  // Warm Redis cache in the background — don't block startup
-  if (process.env.NODE_ENV !== 'test') {
-    const { warmAll } = require('./utils/cacheWarmer');
-    warmAll().catch(() => {});
+  if (config.readModels.rebuildOnApiStart) {
+    rebuildReadModels()
+      .then(({ searchIndexed, catalogEnabled, catalogIndexed }) => {
+        logger.info(`Read models ready (redis=${searchIndexed}, mongo=${catalogEnabled ? catalogIndexed : 'disabled'})`);
+      })
+      .catch((err) => logger.error(err));
   }
+  if (config.readModels.embeddedSyncWorker) {
+    startCatalogSyncWorker();
+  }
+  startLifecycleWorker();
 });
-
-// ── Background Workers ───────────────────────────────────────
-// Only run in-process when NOT running as the dedicated catalog-sync-worker container.
-// The docker-compose catalog-sync-worker service runs syncWorker.js standalone.
-if (process.env.NODE_ENV !== 'test' && !process.env.WORKER_ONLY) {
-  require('./workers/syncWorker');
-  require('./workers/lifecycleWorker');
-}
 
 module.exports = app;

@@ -72,14 +72,12 @@ const searchService = {
   async addSearchSuggestion(term) {
     if (!redis || !term || term.length < 2) return;
     try {
-      const normalized = term.toLowerCase().trim();
-      await redis.pipeline()
-        .zincrby('search:suggestions', 1, normalized)
-        // NX: only add to search:terms if not already present (score stays 0 for ZRANGEBYLEX)
-        .zadd('search:terms', 'NX', 0, normalized)
-        // Trim: keep only the top 1000 scored suggestions
-        .zremrangebyrank('search:suggestions', 0, -1001)
-        .exec();
+      const normalized = normalize(term);
+      await redis.zincrby(INDEX_KEYS.suggestions, 1, normalized);
+      const count = await redis.zcard(INDEX_KEYS.suggestions);
+      if (count > 1000) {
+        await redis.zremrangebyrank(INDEX_KEYS.suggestions, 0, count - 1001);
+      }
     } catch {
       // Suggestion tracking is best-effort.
     }
@@ -237,41 +235,24 @@ const searchService = {
     const normalized = normalize(prefix);
     const cacheKey = `autocomplete:${normalized}`;
     return cacheGet(cacheKey, async () => {
-      // ZRANGEBYLEX on search:terms (all members score=0) for O(log N) prefix scan
-      const p = prefix.toLowerCase();
-      const results = await redis.zrangebylex('search:terms', `[${p}`, `[${p}\xff`, 'LIMIT', 0, 8);
+      const popularSuggestions = await redis.zrevrange(INDEX_KEYS.suggestions, 0, 99);
+      const filtered = popularSuggestions
+        .filter((s) => s.startsWith(normalized))
+        .slice(0, 8);
 
-      if (results.length > 0) return results;
+      if (filtered.length > 0) return filtered;
 
-      // Fallback: search:terms not yet seeded — query PostgreSQL
+      const ids = await redis.zrevrange(prefixKey(normalized.slice(0, 32)), 0, 7);
+      if (ids.length > 0) {
+        const bounties = await bountyRepository.findSearchResultsByIds(
+          ids.slice(0, 8).map((id) => parseInt(id, 10))
+        );
+        return bounties.map((b) => b.title.toLowerCase());
+      }
+
       const { bounties } = await bountyRepository.search(prefix, 0, 8);
       return bounties.map((b) => b.title.toLowerCase());
-    }, 600);
-  },
-
-  // Track search queries that returned zero results — useful for demand analytics
-  async trackUnmetDemand(query) {
-    if (!redis || !query || query.trim().length < 2) return;
-    try {
-      await redis.zincrby('unmet:demand', 1, query.toLowerCase().trim());
-    } catch {
-      // ignore
-    }
-  },
-
-  // Return the top N unmet demand terms (zero-result searches)
-  async getUnmetDemand(limit = 20) {
-    if (!redis) return [];
-    try {
-      const raw = await redis.zrevrange('unmet:demand', 0, limit - 1, 'WITHSCORES');
-      const result = [];
-      for (let i = 0; i < raw.length; i += 2) {
-        result.push({ term: raw[i], count: parseInt(raw[i + 1], 10) });
-      }
-      return result;
-    } catch {
-      return [];
-    }
+    }, 120);
   },
 };
 

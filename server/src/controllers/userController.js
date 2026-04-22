@@ -42,26 +42,6 @@ const userController = {
       next(err);
     }
   },
-
-  async getUniversities(req, res, next) {
-    try {
-      const universities = await userService.getUniversities();
-      res.json(universities);
-    } catch (err) {
-      next(err);
-    }
-  },
-
-  async getActivity(req, res, next) {
-    try {
-      const userId = parseInt(req.params.id);
-      const { page, limit } = paginate(req.query);
-      const activity = await userService.getActivity(userId, page, limit);
-      res.json(activity);
-    } catch (err) {
-      next(err);
-    }
-  },
 };
 
 module.exports = userController;

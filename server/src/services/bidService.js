@@ -1,7 +1,8 @@
-// ─── Bid Service ─────────────────────────────────────────────
-const { prisma, prismaRead } = require('../config/database');
 const { Prisma } = require('@prisma/client');
-const { cacheInvalidate, publishEvent } = require('../config/redis');
+const bidRepository = require('../repositories/bidRepository');
+const { prisma } = require('../config/database');
+const { cacheInvalidate } = require('../config/redis');
+const { publishBountyEvent } = require('./eventBus');
 const AppError = require('../utils/AppError');
 
 function validateBountyForBid(bounty, userId) {
@@ -27,82 +28,92 @@ function normalizeBidAmount(amount, bountyReward) {
 
 const bidService = {
   async placeBid(userId, bountyId, message, amount) {
-    const bounty = await prismaRead.bounty.findUnique({ where: { id: bountyId } });
-    if (!bounty) throw new AppError('Bounty not found', 404);
-    if (bounty.status !== 'OPEN') throw new AppError('Bounty is not open for bids', 400);
-    if (bounty.createdBy === userId) throw new AppError('Cannot bid on your own bounty', 400);
+    const bid = await prisma.$transaction(async (tx) => {
+      const bounty = await tx.bounty.findUnique({ where: { id: bountyId } });
+      validateBountyForBid(bounty, userId);
 
-    return prisma.bid.create({
-      data: { bountyId, bidderId: userId, message, amount: amount ? parseInt(amount) : null },
+      return tx.bid.create({
+        data: {
+          bountyId,
+          bidderId: userId,
+          message,
+          amount: normalizeBidAmount(amount, bounty.rewardPoints),
+        },
+      });
     });
+    await cacheInvalidate('bounties:*');
+    await cacheInvalidate('trending:*');
+    await publishBountyEvent('bounty.upserted', bountyId, { reason: 'bid.created' });
+    return bid;
   },
 
   async acceptBid(userId, bidId) {
-    // Pre-flight read (replica) — cheap check before acquiring locks
-    const bidCheck = await prismaRead.bid.findUnique({
-      where: { id: bidId },
-      include: {
-        bounty: { include: { creator: { select: { universityId: true } } } },
-      },
-    });
-    if (!bidCheck) throw new AppError('Bid not found', 404);
-    if (bidCheck.bounty.createdBy !== userId) throw new AppError('Not authorized', 403);
-    if (bidCheck.status !== 'PENDING') throw new AppError('Bid already processed', 400);
-    if (bidCheck.bounty.status !== 'OPEN') throw new AppError('Bounty is not open', 400);
+    let accepted;
+    try {
+      accepted = await prisma.$transaction(async (tx) => {
+        const bid = await tx.bid.findUnique({
+          where: { id: bidId },
+          include: { bidder: { select: { id: true, name: true } }, bounty: true },
+        });
 
-    // Serializable transaction prevents two concurrent acceptBid calls from both succeeding
-    const accepted = await prisma.$transaction(async (tx) => {
-      const bid = await tx.bid.findUnique({ where: { id: bidId } });
-      if (!bid || bid.status !== 'PENDING') throw new AppError('Bid already processed', 400);
+        if (!bid) throw new AppError('Bid not found', 404);
+        if (bid.bounty.createdBy !== userId) throw new AppError('Not authorized', 403);
+        if (bid.status !== 'PENDING') throw new AppError('Bid already processed', 400);
+        if (bid.bounty.status !== 'OPEN') throw new AppError('Bounty is not open for bid acceptance', 409);
+        if (bid.bounty.deadline && new Date(bid.bounty.deadline) <= new Date()) {
+          throw new AppError('Bounty deadline has passed', 400);
+        }
 
-      const updated = await tx.bid.update({ where: { id: bidId }, data: { status: 'ACCEPTED' } });
-      await tx.bid.updateMany({
-        where: { bountyId: bid.bountyId, id: { not: bidId }, status: 'PENDING' },
-        data: { status: 'REJECTED' },
-      });
-      await tx.bounty.update({ where: { id: bid.bountyId }, data: { status: 'IN_PROGRESS' } });
-      return updated;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        const claimedBounty = await tx.bounty.updateMany({
+          where: { id: bid.bountyId, status: 'OPEN' },
+          data: { status: 'IN_PROGRESS' },
+        });
+        if (claimedBounty.count !== 1) {
+          throw new AppError('Another bid was accepted first', 409);
+        }
+
+        const claimedBid = await tx.bid.updateMany({
+          where: { id: bidId, status: 'PENDING' },
+          data: { status: 'ACCEPTED' },
+        });
+        if (claimedBid.count !== 1) {
+          throw new AppError('Bid already processed', 409);
+        }
+
+        await tx.bid.updateMany({
+          where: { bountyId: bid.bountyId, id: { not: bidId }, status: 'PENDING' },
+          data: { status: 'REJECTED' },
+        });
+
+        return tx.bid.findUnique({
+          where: { id: bidId },
+          include: { bidder: { select: { id: true, name: true } }, bounty: true },
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (err) {
+      if (err.code === 'P2034') throw new AppError('Concurrent bid update detected, please retry', 409);
+      throw err;
+    }
 
     await cacheInvalidate('bounties:*');
-    await publishEvent('BID_ACCEPTED', {
-      bountyId: bidCheck.bountyId,
-      bidId,
-      bidderId: bidCheck.bidderId,
-      universityId: bidCheck.bounty.creator?.universityId,
-    });
-
+    await cacheInvalidate('trending:*');
+    await publishBountyEvent('bounty.closed', accepted.bountyId, { reason: 'bid.accepted' });
     return accepted;
   },
 
   async rejectBid(userId, bidId) {
-    const bid = await prismaRead.bid.findUnique({
-      where: { id: bidId },
-      include: { bounty: true },
-    });
+    const bid = await bidRepository.findById(bidId);
     if (!bid) throw new AppError('Bid not found', 404);
     if (bid.bounty.createdBy !== userId) throw new AppError('Not authorized', 403);
 
-    return prisma.bid.update({ where: { id: bidId }, data: { status: 'REJECTED' } });
+    const updated = await bidRepository.updateStatus(bidId, 'REJECTED');
+    await cacheInvalidate('bounties:*');
+    await publishBountyEvent('bounty.upserted', bid.bountyId, { reason: 'bid.rejected' });
+    return updated;
   },
 
   async getBidsForBounty(bountyId, page, limit) {
-    const skip = (page - 1) * limit;
-    const [bids, total] = await Promise.all([
-      prismaRead.bid.findMany({
-        where: { bountyId },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        include: {
-          bidder: {
-            select: { id: true, name: true, avatarUrl: true, reputation: true, university: { select: { name: true } } },
-          },
-        },
-      }),
-      prismaRead.bid.count({ where: { bountyId } }),
-    ]);
-    return { bids, total };
+    return bidRepository.findByBounty(bountyId, (page - 1) * limit, limit);
   },
 };
 
