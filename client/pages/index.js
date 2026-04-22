@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import api from '../lib/api';
 import BountyCard from '../components/BountyCard';
-import { TrendingUp, Clock, PlusCircle, Trophy } from 'lucide-react';
+import { TrendingUp, Clock, Trophy } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
 // Skeleton for a forum row while data loads
@@ -47,26 +47,11 @@ export default function Home() {
     <div className="max-w-4xl mx-auto space-y-0">
 
       {/* Site header — brief, forum-style. No big marketing hero needed. */}
-      <div className="py-6 border-b border-gray-200 dark:border-gray-800 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">BountyHub</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Post tasks, find collaborators, earn reputation — across universities.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {user ? (
-            <Link href="/bounties/new" className="btn-primary text-sm gap-1">
-              <PlusCircle className="w-4 h-4" />
-              Post Bounty
-            </Link>
-          ) : (
-            <>
-              <Link href="/login" className="btn-secondary text-sm">Log in</Link>
-              <Link href="/register" className="btn-primary text-sm">Sign up</Link>
-            </>
-          )}
-        </div>
+      <div className="py-6 border-b border-gray-200 dark:border-gray-800">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">BountyHub</h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          Post tasks, find collaborators, earn reputation — across universities.
+        </p>
       </div>
 
       {/* ── Trending feed ────────────────────────────────── */}

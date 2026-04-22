@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import api from '../../lib/api';
 import BountyCard from '../../components/BountyCard';
 import Pagination from '../../components/Pagination';
-import { Filter, SortDesc, PlusCircle } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
+import { Filter, SortDesc } from 'lucide-react';
 
 export default function BountiesPage() {
-  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -60,20 +57,12 @@ export default function BountiesPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-0">
 
-      <div className="flex items-center justify-between py-4 border-b border-gray-200 dark:border-gray-800">
-        <div>
-          <h1 className="text-2xl font-bold">Bounties</h1>
-          {data?.pagination?.total != null && (
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-              {data.pagination.total} tasks
-            </p>
-          )}
-        </div>
-        {user && (
-          <Link href="/bounties/new" className="btn-primary text-sm gap-1">
-            <PlusCircle className="w-4 h-4" />
-            Post Bounty
-          </Link>
+      <div className="py-4 border-b border-gray-200 dark:border-gray-800">
+        <h1 className="text-2xl font-bold">Bounties</h1>
+        {data?.pagination?.total != null && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            {data.pagination.total} tasks
+          </p>
         )}
       </div>
 
