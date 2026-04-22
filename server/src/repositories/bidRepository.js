@@ -35,6 +35,22 @@ const bidRepository = {
     return { bids, total };
   },
 
+  async findByBidder(userId, skip, take) {
+    const [bids, total] = await Promise.all([
+      prismaRead.bid.findMany({
+        where: { bidderId: userId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: {
+          bounty: { select: { id: true, title: true, category: true, status: true, rewardPoints: true } },
+        },
+      }),
+      prismaRead.bid.count({ where: { bidderId: userId } }),
+    ]);
+    return { bids, total };
+  },
+
   // Reject all other pending bids for a bounty
   async rejectOtherBids(bountyId, acceptedBidId) {
     return prisma.bid.updateMany({

@@ -27,6 +27,11 @@ model University {
 }
 
 // ─── Users ──────────────────────────────────────────────────────
+enum UserRole {
+  STUDENT
+  STAFF
+}
+
 model User {
   id           Int    @id @default(autoincrement())
   name         String @db.VarChar(150)
@@ -35,6 +40,7 @@ model User {
   avatarUrl    String? @map("avatar_url") @db.VarChar(500)
   universityId Int    @map("university_id")
   reputation   Int    @default(0)
+  role         UserRole @default(STUDENT)
 
   university University @relation(fields: [universityId], references: [id])
 
@@ -91,14 +97,18 @@ model Bounty {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // Indexes for performance
+  // Single-column indexes retained for writes and partial filters
   @@index([createdBy])
   @@index([status])
   @@index([category])
-  @@index([department])
-  @@index([createdAt(sort: Desc)])
-  @@index([rewardPoints(sort: Desc)])
-  @@index([deadline])
+
+  // Compound indexes for the hot read paths
+  // getTrending: WHERE status='OPEN' ORDER BY reward_points DESC
+  @@index([status, rewardPoints(sort: Desc)])
+  // default list: WHERE status=? ORDER BY created_at DESC
+  @@index([status, createdAt(sort: Desc)])
+  // lifecycleWorker: WHERE status='OPEN' AND deadline < now()
+  @@index([status, deadline])
   @@map("bounties")
 }
 
@@ -123,8 +133,9 @@ model Bid {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([bountyId, bidderId]) // one bid per user per bounty
-  @@index([bountyId])
   @@index([bidderId])
+  // getBidsForBounty: WHERE bounty_id=? ORDER BY created_at DESC
+  @@index([bountyId, createdAt(sort: Desc)])
   @@map("bids")
 }
 
@@ -150,9 +161,10 @@ model Submission {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([bountyId])
   @@index([submittedBy])
   @@index([status])
+  // findByBounty: WHERE bounty_id=? ORDER BY created_at DESC
+  @@index([bountyId, createdAt(sort: Desc)])
   @@map("submissions")
 }
 
@@ -168,9 +180,9 @@ model Comment {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([bountyId])
   @@index([userId])
-  @@index([createdAt(sort: Desc)])
+  // findByBounty: WHERE bounty_id=? ORDER BY created_at DESC
+  @@index([bountyId, createdAt(sort: Desc)])
   @@map("comments")
 }
 
@@ -185,7 +197,7 @@ model ReputationLog {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([userId])
-  @@index([createdAt(sort: Desc)])
+  // getReputationHistory: WHERE user_id=? ORDER BY created_at DESC
+  @@index([userId, createdAt(sort: Desc)])
   @@map("reputation_log")
 }

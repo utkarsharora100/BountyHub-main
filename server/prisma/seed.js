@@ -257,9 +257,13 @@ async function main() {
   // ── Clean slate ───────────────────────────────────────────
   console.log('  🗑  Clearing existing data...');
   try {
-    await prisma.$executeRawUnsafe(
-      `TRUNCATE TABLE reputation_log, comments, submissions, bids, bounties, users, universities RESTART IDENTITY CASCADE`
-    );
+    // Dynamically fetch all tables and truncate them to avoid naming mismatch errors
+    const tables = await prisma.$queryRaw`SELECT tablename FROM pg_tables WHERE schemaname='public'`;
+    const tableNames = tables.map(t => `"${t.tablename}"`).filter(name => name !== '"_prisma_migrations"');
+    
+    if (tableNames.length > 0) {
+      await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${tableNames.join(', ')} RESTART IDENTITY CASCADE;`);
+    }
   } catch {
     // Tables may not exist on first run — db push will create them
     console.log('  ℹ  No existing tables to clear (first run)');
@@ -268,6 +272,7 @@ async function main() {
   // ── 1. Universities (30) ──────────────────────────────────
   await prisma.university.createMany({
     data: UNIVERSITIES.map((u) => ({ name: u.name, country: 'India' })),
+    skipDuplicates: true,
   });
   const universities = await prisma.university.findMany({ orderBy: { id: 'asc' } });
   console.log(`  ✓ ${universities.length} universities`);
@@ -277,16 +282,16 @@ async function main() {
   const passwordHash = await bcrypt.hash('pass123', 10);
 
   const FEATURED_USERS = [
-    { name: 'Aarav Sharma', email: 'aarav@iitd.ac.in', uniIdx: 0, reputation: 720 },
-    { name: 'Priya Patel', email: 'priya@iitb.ac.in', uniIdx: 1, reputation: 650 },
-    { name: 'Rohan Gupta', email: 'rohan@iitm.ac.in', uniIdx: 2, reputation: 580 },
-    { name: 'Ananya Reddy', email: 'ananya@iitk.ac.in', uniIdx: 3, reputation: 510 },
-    { name: 'Arjun Singh', email: 'arjun@iitkgp.ac.in', uniIdx: 4, reputation: 440 },
-    { name: 'Kavya Nair', email: 'kavya@nitt.edu', uniIdx: 10, reputation: 390 },
-    { name: 'Siddharth Iyer', email: 'sid@pilani.bits-pilani.ac.in', uniIdx: 15, reputation: 350 },
-    { name: 'Meera Joshi', email: 'meera@iiit.ac.in', uniIdx: 18, reputation: 300 },
-    { name: 'Dhruv Kulkarni', email: 'dhruv@dtu.ac.in', uniIdx: 26, reputation: 250 },
-    { name: 'Sneha Banerjee', email: 'sneha@jaduniv.edu.in', uniIdx: 23, reputation: 200 },
+    { name: 'Aarav Sharma', email: 'aarav@iitd.ac.in', uniIdx: 0, reputation: 720, role: 'STAFF' },
+    { name: 'Priya Patel', email: 'priya@iitb.ac.in', uniIdx: 1, reputation: 650, role: 'STAFF' },
+    { name: 'Rohan Gupta', email: 'rohan@iitm.ac.in', uniIdx: 2, reputation: 580, role: 'STAFF' },
+    { name: 'Ananya Reddy', email: 'ananya@iitk.ac.in', uniIdx: 3, reputation: 510, role: 'STUDENT' },
+    { name: 'Arjun Singh', email: 'arjun@iitkgp.ac.in', uniIdx: 4, reputation: 440, role: 'STUDENT' },
+    { name: 'Kavya Nair', email: 'kavya@nitt.edu', uniIdx: 10, reputation: 390, role: 'STAFF' },
+    { name: 'Siddharth Iyer', email: 'sid@pilani.bits-pilani.ac.in', uniIdx: 15, reputation: 350, role: 'STUDENT' },
+    { name: 'Meera Joshi', email: 'meera@iiit.ac.in', uniIdx: 18, reputation: 300, role: 'STAFF' },
+    { name: 'Dhruv Kulkarni', email: 'dhruv@dtu.ac.in', uniIdx: 26, reputation: 250, role: 'STUDENT' },
+    { name: 'Sneha Banerjee', email: 'sneha@jaduniv.edu.in', uniIdx: 23, reputation: 200, role: 'STUDENT' },
   ];
 
   const emailSet = new Set(FEATURED_USERS.map((u) => u.email));
@@ -296,6 +301,7 @@ async function main() {
     passwordHash,
     universityId: universities[u.uniIdx].id,
     reputation: u.reputation,
+    role: u.role,
   }));
 
   for (let i = 0; i < 190; i++) {
@@ -323,12 +329,14 @@ async function main() {
       passwordHash,
       universityId: uni.id,
       reputation: randInt(0, 800),
+      role: rand() > 0.8 ? 'STAFF' : 'STUDENT',
     });
   }
 
-  await prisma.user.createMany({ data: usersData });
+  await prisma.user.createMany({ data: usersData, skipDuplicates: true });
   const users = await prisma.user.findMany({ orderBy: { id: 'asc' } });
   console.log(`  ✓ ${users.length} users (password: pass123)`);
+  const staffUsers = users.filter((u) => u.role === 'STAFF');
 
   // ── 3. Bounties (500) ─────────────────────────────────────
   const bountiesData = [];
@@ -336,7 +344,7 @@ async function main() {
     const cat = pick(CATEGORIES);
     const template = pick(BOUNTY_TEMPLATES[cat]);
     const topic = pick(TOPICS);
-    const creator = pick(users);
+    const creator = pick(staffUsers);
     const status = pick(STATUSES);
     const hasDeadline = rand() > 0.15;
 
@@ -356,7 +364,7 @@ async function main() {
     });
   }
 
-  await prisma.bounty.createMany({ data: bountiesData });
+  await prisma.bounty.createMany({ data: bountiesData, skipDuplicates: true });
   const bounties = await prisma.bounty.findMany({ orderBy: { id: 'asc' } });
   console.log(`  ✓ ${bounties.length} bounties`);
 
@@ -397,7 +405,7 @@ async function main() {
     });
   }
 
-  await prisma.comment.createMany({ data: commentsData });
+  await prisma.comment.createMany({ data: commentsData, skipDuplicates: true });
   console.log(`  ✓ ${commentsData.length} comments`);
 
   // ── 6. Submissions (~300) ─────────────────────────────────
@@ -408,6 +416,11 @@ async function main() {
     const bounty = pick(bounties);
     const submitter = pick(users);
     if (submitter.id === bounty.createdBy) continue;
+
+      // Fix: Actually use the submissionSet to prevent unique constraint crashes
+      const key = `${bounty.id}-${submitter.id}`;
+      if (submissionSet.has(key)) continue;
+      submissionSet.add(key);
 
     const linkTemplate = pick(SUBMISSION_LINKS);
     submissionsData.push({
@@ -422,7 +435,7 @@ async function main() {
     });
   }
 
-  await prisma.submission.createMany({ data: submissionsData });
+  await prisma.submission.createMany({ data: submissionsData, skipDuplicates: true });
   console.log(`  ✓ ${submissionsData.length} submissions`);
 
   // ── 7. Reputation Logs (~500) ─────────────────────────────
@@ -439,7 +452,7 @@ async function main() {
     });
   }
 
-  await prisma.reputationLog.createMany({ data: repData });
+  await prisma.reputationLog.createMany({ data: repData, skipDuplicates: true });
   console.log(`  ✓ ${repData.length} reputation logs`);
 
   // ── Summary ───────────────────────────────────────────────
