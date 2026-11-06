@@ -4,7 +4,7 @@
 services:
   # ── PostgreSQL Master ──────────────────────────────────────
   postgres-master:
-    image: bitnamilegacy/postgresql:16
+    image: soldevelo/postgresql:16
     container_name: bounty-postgres-master
     environment:
       POSTGRESQL_REPLICATION_MODE: master
@@ -25,7 +25,7 @@ services:
 
   # ── PostgreSQL Read Replica ────────────────────────────────
   postgres-replica:
-    image: bitnamilegacy/postgresql:16
+    image: soldevelo/postgresql:16
     container_name: bounty-postgres-replica
     environment:
       POSTGRESQL_REPLICATION_MODE: slave
@@ -63,7 +63,7 @@ services:
 
   # ── MongoDB Primary ────────────────────────────────────────
   mongo-primary:
-    image: bitnami/mongodb
+    image: soldevelo/mongodb
     container_name: bounty-mongo-primary
     environment:
       MONGODB_REPLICA_SET_MODE: primary
@@ -86,7 +86,7 @@ services:
 
   # ── MongoDB Replica ────────────────────────────────────────
   mongo-replica:
-    image: bitnami/mongodb
+    image: soldevelo/mongodb
     container_name: bounty-mongo-replica
     environment:
       MONGODB_REPLICA_SET_MODE: secondary
